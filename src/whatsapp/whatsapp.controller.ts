@@ -170,6 +170,7 @@ export class WhatsappController {
 
   // Enviar mensaje desde el admin (nuevo endpoint para la página de chats)
   @Post('send-message')
+  @UseGuards(FirebaseAuthGuard)
   async sendMessage(@Body() body: { to: string; text: string }) {
     await this.whatsappService.sendAdminMessage(body.to, body.text);
     return { success: true, message: 'Mensaje enviado' };

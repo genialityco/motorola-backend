@@ -138,8 +138,7 @@ export class WhatsappService implements OnModuleInit {
     this.logger.log('Listener de cambios de estado de tickets activo.');
   }
 
-  // Envía mensaje de texto por WhatsApp API
-  async sendMessage(to: string, text: string) {
+  private async callWhatsAppApi(payload: Record<string, unknown>, logLabel: string) {
     const token = process.env.WHATSAPP_TOKEN;
     const phoneId = process.env.WHATSAPP_PHONE_ID;
 
@@ -156,52 +155,32 @@ export class WhatsappService implements OnModuleInit {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to,
-          type: 'text',
-          text: { body: text },
-        }),
+        body: JSON.stringify(payload),
       },
     );
 
     if (!res.ok) {
-      this.logger.error(`Error enviando WhatsApp: ${res.status} ${await res.text()}`);
+      this.logger.error(`Error ${logLabel}: ${res.status} ${await res.text()}`);
     }
   }
 
-  // Envía imagen por WhatsApp API usando una URL pública
-  async sendImageMessage(to: string, imageUrl: string, caption?: string) {
-    const token = process.env.WHATSAPP_TOKEN;
-    const phoneId = process.env.WHATSAPP_PHONE_ID;
-
-    if (!token || !phoneId) {
-      this.logger.warn('Faltan WHATSAPP_TOKEN o WHATSAPP_PHONE_ID');
-      return;
-    }
-
-    const body: Record<string, unknown> = {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'image',
-      image: { link: imageUrl, ...(caption ? { caption } : {}) },
-    };
-
-    const res = await fetch(
-      `https://graph.facebook.com/v17.0/${phoneId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      },
+  async sendMessage(to: string, text: string) {
+    await this.callWhatsAppApi(
+      { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } },
+      'enviando WhatsApp',
     );
+  }
 
-    if (!res.ok) {
-      this.logger.error(`Error enviando imagen WhatsApp: ${res.status} ${await res.text()}`);
-    }
+  async sendImageMessage(to: string, imageUrl: string, caption?: string) {
+    await this.callWhatsAppApi(
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'image',
+        image: { link: imageUrl, ...(caption ? { caption } : {}) },
+      },
+      'enviando imagen WhatsApp',
+    );
   }
 
   // Guarda un mensaje en el historial de la sesión (visible para el admin)

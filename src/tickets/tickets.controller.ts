@@ -16,9 +16,13 @@ import { TicketsService } from './tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 
-type UploadedFile = {
+type MulterFile = {
   buffer: Buffer;
   mimetype: string;
+};
+
+type AuthenticatedRequest = {
+  user: { uid: string; role?: string };
 };
 
 @Controller('tickets')
@@ -33,13 +37,13 @@ export class TicketsController {
   transition(
     @Param('id') ticketId: string,
     @Body() body: { newStatus: string; comments?: string },
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.ticketsService.transitionStatus(
       ticketId,
       body.newStatus as any,
       req.user.uid,
-      req.user.role || 'user',
+      req.user.role ?? 'user',
       body.comments,
     );
   }
@@ -91,7 +95,7 @@ export class TicketsController {
   @UseInterceptors(FileInterceptor('file'))
   async uploadRepairPhoto(
     @Param('id') ticketId: string,
-    @UploadedFile() file: UploadedFile,
+    @UploadedFile() file: MulterFile,
   ) {
     if (!file) throw new BadRequestException('No se adjuntó ningún archivo.');
 

@@ -25,7 +25,11 @@ const VALID_STATUSES: TicketStatus[] = [
 
 @Injectable()
 export class TicketsService {
-  constructor(private readonly firebase: FirebaseService) {}
+  private readonly storageBucket: string;
+
+  constructor(private readonly firebase: FirebaseService) {
+    this.storageBucket = process.env.FIREBASE_STORAGE_BUCKET ?? '';
+  }
 
   async transitionStatus(
     ticketId: string,
@@ -137,12 +141,11 @@ export class TicketsService {
     mimeType: string,
     folder: string,
   ): Promise<string> {
-    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET;
-    if (!storageBucket) {
+    if (!this.storageBucket) {
       throw new Error('FIREBASE_STORAGE_BUCKET no está configurado');
     }
 
-    const bucket = this.firebase.storage.bucket(storageBucket);
+    const bucket = this.firebase.storage.bucket(this.storageBucket);
     const ext = (mimeType.split('/')[1] || 'jpeg').toLowerCase();
     const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const file = bucket.file(filePath);
