@@ -5,6 +5,7 @@ import {
   cert,
   applicationDefault,
   App,
+  type Credential,
 } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
@@ -45,18 +46,24 @@ export class FirebaseService {
         this.logger.log('Firebase Admin SDK inicializado en modo EMULADOR.');
       } else {
         const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-        if (!credPath) {
+        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+        let credential: Credential;
+        if (clientEmail && privateKey) {
+          credential = cert({ projectId, clientEmail, privateKey });
+        } else if (credPath) {
+          credential = cert(credPath);
+        } else {
           this.logger.error(
-            'Sin credenciales: define GOOGLE_APPLICATION_CREDENTIALS en .env ' +
-            'apuntando a tu service-account.json, o activa ' +
-            'USE_FIREBASE_EMULATORS=true para desarrollo local.',
+            'Sin credenciales: define FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY ' +
+            'como variables de entorno, o GOOGLE_APPLICATION_CREDENTIALS apuntando ' +
+            'al service-account.json, o activa USE_FIREBASE_EMULATORS=true.',
           );
+          credential = applicationDefault();
         }
-        this._app = initializeApp({
-          credential: credPath ? cert(credPath) : applicationDefault(),
-          projectId,
-          storageBucket,
-        });
+
+        this._app = initializeApp({ credential, projectId, storageBucket });
         this.logger.log(
           `Firebase Admin SDK inicializado (proyecto: ${projectId}).`,
         );
