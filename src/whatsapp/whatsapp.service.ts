@@ -55,6 +55,19 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   }, obj);
 }
 
+function setNestedValue(obj: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path.split('.');
+  let current = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (!current[part] || typeof current[part] !== 'object' || Array.isArray(current[part])) {
+      current[part] = {};
+    }
+    current = current[part] as Record<string, unknown>;
+  }
+  current[parts[parts.length - 1]] = value;
+}
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
@@ -425,7 +438,7 @@ export class WhatsappService {
       const allFields = await this.botConfig.getFields();
       const fields = allFields.filter(f => f.source === 'bot');
       const fieldIndex: number = typeof session.fieldIndex === 'number' ? session.fieldIndex : 0;
-      const fieldValues: Record<string, string | string[]> = session.fieldValues || {};
+      const fieldValues: Record<string, unknown> = session.fieldValues || {};
 
       const currentField = fields[fieldIndex];
       if (!currentField) {
@@ -457,7 +470,7 @@ export class WhatsappService {
             return;
           }
 
-          fieldValues[currentField.key] = finalPhotos;
+          setNestedValue(fieldValues, currentField.key, finalPhotos);
           const nextIndex = fieldIndex + 1;
           if (nextIndex < fields.length) {
             await sessionRef.set({ fieldIndex: nextIndex, fieldValues, state: 'WAITING_FIELD', tempFieldPhotos: [] }, { merge: true });
@@ -499,7 +512,7 @@ export class WhatsappService {
         value = currentField.normalize !== false ? normalizeText(body) : body.trim();
       }
 
-      fieldValues[currentField.key] = value;
+      setNestedValue(fieldValues, currentField.key, value);
       const nextIndex = fieldIndex + 1;
       if (nextIndex < fields.length) {
         await sessionRef.set({ fieldIndex: nextIndex, fieldValues, state: 'WAITING_FIELD', tempFieldPhotos: [] }, { merge: true });
@@ -852,7 +865,7 @@ export class WhatsappService {
   private async createTicket(
     phone: string,
     sessionRef: DocumentReference<DocumentData>,
-    fieldValues: Record<string, string | string[]>,
+    fieldValues: Record<string, unknown>,
     send: (msg: string) => Promise<void>,
   ): Promise<void> {
     const db = this.firebase.db;
