@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { WhatsappController } from './whatsapp.controller';
 import { WhatsappService } from './whatsapp.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { BotConfigModule } from '../bot-config/bot-config.module';
 
+@Global()
 @Module({
   imports: [BotConfigModule],
   controllers: [WhatsappController],

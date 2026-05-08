@@ -34,67 +34,53 @@ export class TicketsController {
   ) {}
 
   @Post(':id/transition')
-  transition(
+  async transition(
     @Param('id') ticketId: string,
     @Body() body: { newStatus: string; comments?: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.ticketsService.transitionStatus(
-      ticketId,
-      body.newStatus as any,
-      req.user.uid,
-      req.user.role ?? 'user',
-      body.comments,
-    );
+    const { success, message, prevStatus, ticketData } =
+      await this.ticketsService.transitionStatus(
+        ticketId,
+        body.newStatus as any,
+        req.user.uid,
+        req.user.role ?? 'user',
+        body.comments,
+      );
+
+    await this.whatsappService
+      .notifyStatusChange(prevStatus, body.newStatus, ticketData)
+      .catch((err) => console.error('Error enviando notificación WhatsApp:', err));
+
+    return { success, message };
   }
 
-  @Delete(':id/photos/evidence/:index')
-  async deleteEvidencePhoto(
+  @Delete(':id/photos/:fieldKey/:index')
+  async deletePhoto(
     @Param('id') ticketId: string,
+    @Param('fieldKey') fieldKey: string,
     @Param('index') index: string,
   ) {
     const photoIndex = parseInt(index, 10);
     if (isNaN(photoIndex)) throw new BadRequestException('Índice inválido.');
 
     const { ticketNumber, reporterPhone } =
-      await this.ticketsService.deleteEvidencePhoto(ticketId, photoIndex);
+      await this.ticketsService.deletePhotoFromField(ticketId, fieldKey, photoIndex);
 
     if (reporterPhone) {
-      const msg = `Para el ticket número *${ticketNumber}* vuelva adjuntar las evidencias.`;
-      await this.whatsappService
-        .saveMessage(reporterPhone, 'bot', msg)
-        .catch(() => null);
-      await this.whatsappService
-        .sendMessage(reporterPhone, msg)
-        .catch(() => null);
+      const msg = `Para el ticket número *${ticketNumber}* vuelva adjuntar las evidencias del campo ${fieldKey}.`;
+      await this.whatsappService.saveMessage(reporterPhone, 'bot', msg).catch(() => null);
+      await this.whatsappService.sendMessage(reporterPhone, msg).catch(() => null);
     }
 
     return { success: true };
   }
 
-  @Delete(':id/photos/repair/:index')
-  async deleteRepairPhoto(
-    @Param('id') ticketId: string,
-    @Param('index') index: string,
-  ) {
-    const photoIndex = parseInt(index, 10);
-    if (isNaN(photoIndex)) throw new BadRequestException('Índice inválido.');
-    await this.ticketsService.deleteRepairPhoto(ticketId, photoIndex);
-    return { success: true };
-  }
-
-  @Patch(':id/observation')
-  updateObservation(
-    @Param('id') ticketId: string,
-    @Body() body: { observations: string },
-  ) {
-    return this.ticketsService.updateObservation(ticketId, body.observations ?? '');
-  }
-
-  @Post(':id/photos/repair')
+  @Post(':id/photos/:fieldKey')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadRepairPhoto(
+  async uploadPhoto(
     @Param('id') ticketId: string,
+    @Param('fieldKey') fieldKey: string,
     @UploadedFile() file: MulterFile,
   ) {
     if (!file) throw new BadRequestException('No se adjuntó ningún archivo.');
@@ -102,11 +88,20 @@ export class TicketsController {
     const photoUrl = await this.ticketsService.uploadToStorage(
       file.buffer,
       file.mimetype || 'image/jpeg',
-      `repair_photos/${ticketId}`,
+      `ticket_photos/${ticketId}/${fieldKey}`,
     );
 
-    await this.ticketsService.addRepairPhoto(ticketId, photoUrl);
+    await this.ticketsService.addPhotoToField(ticketId, fieldKey, photoUrl);
 
     return { success: true, photoUrl };
+  }
+
+  @Patch(':id/extra/:fieldKey')
+  updateExtraField(
+    @Param('id') ticketId: string,
+    @Param('fieldKey') fieldKey: string,
+    @Body() body: { value: string },
+  ) {
+    return this.ticketsService.updateExtraField(ticketId, fieldKey, body.value ?? '');
   }
 }

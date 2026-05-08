@@ -11,7 +11,10 @@
       "Bash(Format-Table -AutoSize)",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-backend\" -Recurse -Exclude node_modules, dist, .git)",
       "Bash(Select-Object FullName)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(ls \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-backend\\\\dist\" 2>/dev/null | head -20; echo \"---\"; ls \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\" 2>/dev/null)",
+      "Read(//c/Users/sebas/Documents/GitHub/**)",
+      "Bash(firebase functions:list)"
     ],
     "additionalDirectories": [
       "c:\\Users\\sebas\\Documents\\GitHub\\motorola-backend"

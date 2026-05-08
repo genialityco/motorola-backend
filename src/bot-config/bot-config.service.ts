@@ -20,9 +20,16 @@ export interface TicketField {
   order: number;
   normalize: boolean;
   visible?: boolean;
-  type?: 'string' | 'numeric' | 'date' | 'photo' | 'video';
+  type?: 'string' | 'numeric' | 'date' | 'photo' | 'video' | 'boolean' | 'list';
   source?: 'bot' | 'admin' | 'auto';
   required?: boolean;
+  options?: string[];
+}
+
+export interface SystemFieldConfig {
+  key: string;
+  label: string;
+  visible: boolean;
 }
 
 export const DEFAULT_MESSAGES: BotMessages = {
@@ -112,12 +119,14 @@ export class BotConfigService {
     return this.getMessages();
   }
 
-  async updateFields(fields: TicketField[]): Promise<void> {
+  async updateFields(fields: TicketField[], systemFields?: SystemFieldConfig[]): Promise<void> {
     const normalized = fields.map((f, i) => ({ ...f, order: i }));
+    const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: normalized };
+    if (systemFields) data.systemFields = systemFields;
     await this.firebase.db
       .collection('bot_config')
       .doc('ticket_fields')
-      .set({ fields: normalized });
+      .set(data);
     this.invalidateCache();
   }
 

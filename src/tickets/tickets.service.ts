@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, DocumentData } from 'firebase-admin/firestore';
 
 type TicketStatus =
   | 'REPORTADO'
@@ -37,19 +37,22 @@ export class TicketsService {
     uid: string,
     role: string,
     comments?: string,
-  ) {
+  ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
     if (!VALID_STATUSES.includes(newStatus)) {
       throw new BadRequestException(`Estado inválido: ${newStatus}`);
     }
 
     const db = this.firebase.db;
     const ticketRef = db.collection('tickets').doc(ticketId);
+    let prevStatus = '';
+    let ticketData: DocumentData = {};
 
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ticketRef);
       if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
-      const prevStatus = snap.data()?.status;
+      prevStatus = snap.data()?.status ?? '';
+      ticketData = snap.data()!;
 
       tx.update(ticketRef, {
         status: newStatus,
@@ -65,11 +68,12 @@ export class TicketsService {
       });
     });
 
-    return { success: true, message: 'Ticket actualizado correctamente.' };
+    return { success: true, message: 'Ticket actualizado correctamente.', prevStatus, ticketData };
   }
 
-  async deleteEvidencePhoto(
+  async deletePhotoFromField(
     ticketId: string,
+    fieldKey: string,
     photoIndex: number,
   ): Promise<{ ticketNumber: string; reporterPhone: string }> {
     const db = this.firebase.db;
@@ -79,16 +83,15 @@ export class TicketsService {
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
     const data = snap.data()!;
-    const evidencePhotos: string[] = data.photos?.evidence || [];
+    const photos: string[] = (data.extraFields?.[fieldKey] as string[]) || [];
 
-    if (photoIndex < 0 || photoIndex >= evidencePhotos.length) {
+    if (photoIndex < 0 || photoIndex >= photos.length) {
       throw new BadRequestException('Índice de foto inválido.');
     }
 
-    const newPhotos = evidencePhotos.filter((_, i) => i !== photoIndex);
-
+    const newPhotos = photos.filter((_, i) => i !== photoIndex);
     await ticketRef.update({
-      'photos.evidence': newPhotos,
+      [`extraFields.${fieldKey}`]: newPhotos,
       'timestamps.updatedAt': Date.now(),
     });
 
@@ -98,9 +101,10 @@ export class TicketsService {
     };
   }
 
-  async deleteRepairPhoto(
+  async addPhotoToField(
     ticketId: string,
-    photoIndex: number,
+    fieldKey: string,
+    photoUrl: string,
   ): Promise<void> {
     const db = this.firebase.db;
     const ticketRef = db.collection('tickets').doc(ticketId);
@@ -108,30 +112,22 @@ export class TicketsService {
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
-    const data = snap.data()!;
-    const repairPhotos: string[] = data.photos?.repair || [];
-
-    if (photoIndex < 0 || photoIndex >= repairPhotos.length) {
-      throw new BadRequestException('Índice de foto inválido.');
-    }
-
-    const newPhotos = repairPhotos.filter((_, i) => i !== photoIndex);
-
     await ticketRef.update({
-      'photos.repair': newPhotos,
+      [`extraFields.${fieldKey}`]: FieldValue.arrayUnion(photoUrl),
       'timestamps.updatedAt': Date.now(),
     });
   }
 
-  async addRepairPhoto(ticketId: string, photoUrl: string): Promise<void> {
-    const db = this.firebase.db;
-    const ticketRef = db.collection('tickets').doc(ticketId);
-
-    const snap = await ticketRef.get();
-    if (!snap.exists) throw new NotFoundException('El ticket no existe.');
-
-    await ticketRef.update({
-      'photos.repair': FieldValue.arrayUnion(photoUrl),
+  async updateExtraField(
+    ticketId: string,
+    fieldKey: string,
+    value: string,
+  ): Promise<void> {
+    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado`);
+    await ref.update({
+      [`extraFields.${fieldKey}`]: value,
       'timestamps.updatedAt': Date.now(),
     });
   }
@@ -154,12 +150,5 @@ export class TicketsService {
     await file.makePublic();
 
     return file.publicUrl();
-  }
-
-  async updateObservation(ticketId: string, observations: string): Promise<void> {
-    const ref = this.firebase.db.collection('tickets').doc(ticketId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado`);
-    await ref.update({ observations, 'timestamps.updatedAt': Date.now() });
   }
 }
