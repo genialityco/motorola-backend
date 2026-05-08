@@ -991,10 +991,10 @@ export class WhatsappService implements OnModuleInit {
       }
       const ticket = tickets[idx];
       await db.collection('tickets').doc(ticket.id).update({
-        status: 'FINALIZADO',
+        status: 'ENTREGADO',
         'timestamps.updatedAt': Date.now(),
       });
-      await send(`✅ Ticket *${ticket.ticketNumber}* marcado como FINALIZADO.`);
+      await send(`✅ Ticket *${ticket.ticketNumber}* marcado como ENTREGADO.`);
       await sessionRef.set(
         { state: 'IDLE', pendingTickets: null },
         { merge: true },
