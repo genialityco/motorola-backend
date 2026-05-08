@@ -1,0 +1,8 @@
+node_modules/
+dist/
+
+# Variables y secretos — NUNCA commitear
+.env
+.env.local
+service-account.json
+*-service-account.json
