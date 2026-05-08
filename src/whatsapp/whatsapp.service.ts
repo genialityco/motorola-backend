@@ -48,6 +48,13 @@ function normalizeText(text: string): string {
     .toUpperCase();
 }
 
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, part) => {
+    if (!current || typeof current !== 'object') return undefined;
+    return (current as Record<string, unknown>)[part];
+  }, obj);
+}
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
@@ -74,12 +81,12 @@ export class WhatsappService {
       const extraFields = (ticketData.extraFields as Record<string, string | string[]>) || {};
       const repairPhotos: string[] = [];
       for (const field of adminPhotoFields) {
-        const urls = extraFields[field.key];
+        const urls = getNestedValue(extraFields, field.key);
         if (Array.isArray(urls)) repairPhotos.push(...urls);
       }
 
       const descField = allFields.find(f => f.type !== 'photo' && f.source === 'bot');
-      const description = descField ? ((extraFields[descField.key] as string) || '') : '';
+      const description = descField ? String(getNestedValue(extraFields, descField.key) || '') : '';
 
       const msgs = await this.botConfig.getMessages().catch(() => null);
       const msg = repairPhotos.length > 0
@@ -196,17 +203,18 @@ export class WhatsappService {
   }
 
   private buildFieldQuestion(field: TicketField): string {
+    const prompt = field.question?.trim() || field.placeholder?.trim() || field.label;
     if (field.type === 'list' && field.options && field.options.length > 0) {
       const opts = field.options.map((o, i) => `${i + 1}. ${o}`).join('\n');
-      return `${field.question}\n${opts}`;
+      return `${prompt}\n${opts}`;
     }
     if (field.type === 'boolean') {
-      return `${field.question}\n1. Sí\n2. No`;
+      return `${prompt}\n1. Sí\n2. No`;
     }
     if (field.type === 'photo') {
-      return `${field.question}\nEnvía las fotos y escribe *listo* cuando hayas terminado.`;
+      return `${prompt}\nEnvía las fotos y escribe *listo* cuando hayas terminado.`;
     }
-    return field.question;
+    return prompt;
   }
 
   private formatTicketsList(tickets: PendingTicket[]): string {
@@ -528,7 +536,7 @@ export class WhatsappService {
         let info = `📋 *${ticket.ticketNumber}*\nEstado: ${ticket.status}\nFecha: ${dateStr}\n`;
         for (const field of allFields) {
           if (field.type === 'photo') continue;
-          const value = extraFields[field.key];
+          const value = getNestedValue(extraFields, field.key);
           if (value && typeof value === 'string') {
             const display = value === 'true' ? 'Sí' : value === 'false' ? 'No' : value;
             info += `${field.label}: ${display}\n`;
@@ -544,7 +552,7 @@ export class WhatsappService {
 
         let hasPhotos = false;
         for (const field of photoFields) {
-          const photos = extraFields[field.key];
+          const photos = getNestedValue(extraFields, field.key);
           if (Array.isArray(photos) && photos.length > 0) {
             hasPhotos = true;
             await send(`📷 *${field.label}* (${photos.length}):`);
@@ -671,7 +679,7 @@ export class WhatsappService {
     } else if (state === 'WAITING_EDIT_PHOTO_ACTION') {
       const ticketData = session.pendingTicketData as PendingTicket;
       const editFieldKey = session.editFieldKey as string;
-      const photos = (ticketData?.extraFields?.[editFieldKey] as string[]) || [];
+      const photos = (getNestedValue(ticketData?.extraFields || {}, editFieldKey) as string[]) || [];
 
       if (body === '0') {
         await send('Operación cancelada.');
@@ -715,7 +723,7 @@ export class WhatsappService {
         const finalPhotos: string[] = Array.isArray(freshData.tempEditPhotos) ? freshData.tempEditPhotos : tempEditPhotos;
 
         const ticketSnap = await db.collection('tickets').doc(ticketId).get();
-        const existing: string[] = (ticketSnap.data()?.extraFields?.[editFieldKey] as string[]) || [];
+        const existing: string[] = (getNestedValue(ticketSnap.data()?.extraFields || {}, editFieldKey) as string[]) || [];
 
         await db.collection('tickets').doc(ticketId).update({
           [`extraFields.${editFieldKey}`]: [...existing, ...finalPhotos],
@@ -728,7 +736,7 @@ export class WhatsappService {
     } else if (state === 'WAITING_EDIT_PHOTO_SELECTION') {
       const ticketData = session.pendingTicketData as PendingTicket;
       const editFieldKey = session.editFieldKey as string;
-      const photos = (ticketData?.extraFields?.[editFieldKey] as string[]) || [];
+      const photos = (getNestedValue(ticketData?.extraFields || {}, editFieldKey) as string[]) || [];
       const photoIdx = parseInt(body) - 1;
 
       if (body === '0') {
@@ -755,7 +763,7 @@ export class WhatsappService {
       const editFieldKey = ls.editFieldKey as string;
 
       const ticketSnap = await db.collection('tickets').doc(ticketId).get();
-      const currentPhotos: string[] = [...((ticketSnap.data()?.extraFields?.[editFieldKey] as string[]) || [])];
+      const currentPhotos: string[] = [...((getNestedValue(ticketSnap.data()?.extraFields || {}, editFieldKey) as string[]) || [])];
 
       if (pendingPhotoIndex >= 0 && pendingPhotoIndex < currentPhotos.length) {
         currentPhotos[pendingPhotoIndex] = incomingPhotoUrl;

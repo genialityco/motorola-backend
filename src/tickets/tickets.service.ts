@@ -23,6 +23,13 @@ const VALID_STATUSES: TicketStatus[] = [
   'FINALIZADO',
 ];
 
+function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, part) => {
+    if (!current || typeof current !== 'object') return undefined;
+    return (current as Record<string, unknown>)[part];
+  }, obj);
+}
+
 @Injectable()
 export class TicketsService {
   private readonly storageBucket: string;
@@ -83,7 +90,7 @@ export class TicketsService {
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
     const data = snap.data()!;
-    const photos: string[] = (data.extraFields?.[fieldKey] as string[]) || [];
+    const photos = (getNestedValue(data.extraFields || {}, fieldKey) as string[]) || [];
 
     if (photoIndex < 0 || photoIndex >= photos.length) {
       throw new BadRequestException('Índice de foto inválido.');

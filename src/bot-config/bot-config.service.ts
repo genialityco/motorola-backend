@@ -16,7 +16,8 @@ export interface BotMessages {
 export interface TicketField {
   key: string;
   label: string;
-  question: string;
+  question?: string;
+  placeholder?: string;
   order: number;
   normalize: boolean;
   visible?: boolean;
@@ -60,7 +61,7 @@ export const DEFAULT_FIELDS: TicketField[] = [
   { key: 'novelty.type', label: 'Tipo de Novedad', question: 'Tipo de Novedad', order: 3, normalize: false, visible: true },
   { key: 'novelty.description', label: 'Descripción / Novedad', question: 'Descripción / Novedad', order: 4, normalize: false, visible: true },
   { key: 'photos.evidence', label: 'Fotos de Evidencia', question: 'Fotos de Evidencia', order: 5, normalize: false, visible: false },
-  { key: 'photos.repair', label: 'Fotos de Reparación', question: 'Fotos de Reparación', order: 6, normalize: false, visible: false },
+  { key: 'photos.repair', label: 'Fotos de Reparación', question: 'Fotos de Reparación', placeholder: 'Sube aquí las fotos de reparación', order: 6, normalize: false, visible: false },
 ];
 
 @Injectable()
