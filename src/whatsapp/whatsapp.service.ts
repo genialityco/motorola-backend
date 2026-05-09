@@ -734,7 +734,16 @@ export class WhatsappService {
           [`extraFields.${editFieldKey}`]: newValue,
           'timestamps.updatedAt': Date.now(),
         });
-        await send('✅ Campo actualizado correctamente.');
+        const msgsEdit = await this.botConfig.getMessages().catch(() => null);
+        const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
+        const extraVarsEdit = this.flattenExtraFieldsForInterpolation(
+          (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
+        );
+        const editMsg = interpolate(
+          msgsEdit?.ticketCreated ?? '✅ Ticket *{ticketNumber}* {action} exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
+          { ticketNumber: ticketDataEdit?.ticketNumber ?? '', action: 'editado', ...extraVarsEdit },
+        );
+        await send(editMsg);
       }
       await sessionRef.set({ state: 'IDLE', pendingTicketId: null, pendingTickets: null, pendingTicketData: null, editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null }, { merge: true });
 
@@ -849,11 +858,20 @@ export class WhatsappService {
         await send(`Por favor selecciona un número entre 1 y ${tickets.length}.`);
         return;
       }
-      await db.collection('tickets').doc(tickets[idx].id).update({
+      const deletedTicket = tickets[idx];
+      await db.collection('tickets').doc(deletedTicket.id).update({
         status: 'ARCHIVADO',
         'timestamps.updatedAt': Date.now(),
       });
-      await send(`✅ Ticket *${tickets[idx].ticketNumber}* eliminado correctamente.`);
+      const msgsDelete = await this.botConfig.getMessages().catch(() => null);
+      const extraVarsDelete = this.flattenExtraFieldsForInterpolation(
+        (deletedTicket.extraFields as Record<string, unknown>) || {},
+      );
+      const deleteMsg = interpolate(
+        msgsDelete?.ticketDeleted ?? '✅ Ticket *{ticketNumber}* eliminado correctamente.',
+        { ticketNumber: deletedTicket.ticketNumber, ...extraVarsDelete },
+      );
+      await send(deleteMsg);
       await sessionRef.set({ state: 'IDLE', pendingTickets: null }, { merge: true });
 
     // ─── FINALIZAR TICKET ────────────────────────────────────────────────────
@@ -949,9 +967,12 @@ export class WhatsappService {
     }
 
     const msgs = await this.botConfig.getMessages().catch(() => null);
+    const extraVarsCreate = this.flattenExtraFieldsForInterpolation(
+      fieldValues as Record<string, unknown>,
+    );
     const successMsg = interpolate(
-      msgs?.ticketCreated ?? '✅ Ticket *{ticketNumber}* creado exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
-      { ticketNumber: String(ticketData.ticketNumber) },
+      msgs?.ticketCreated ?? '✅ Ticket *{ticketNumber}* {action} exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
+      { ticketNumber: String(ticketData.ticketNumber), action: 'creado', ...extraVarsCreate },
     );
     await send(successMsg);
     await sessionRef.set(

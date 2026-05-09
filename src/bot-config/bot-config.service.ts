@@ -4,6 +4,7 @@ import { FirebaseService } from '../firebase/firebase.service';
 export interface BotMessages {
   menu: string;
   ticketCreated: string;
+  ticketDeleted: string;
   statusChanged: string;
   reparadoMessage: string;
   noTickets: string;
@@ -46,7 +47,8 @@ export const DEFAULT_MESSAGES: BotMessages = {
     '4. Para eliminar un ticket presiona 4\n' +
     '5. Para finalizar un ticket presiona 5',
   ticketCreated:
-    '✅ Ticket *{ticketNumber}* creado exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
+    '✅ Ticket *{ticketNumber}* {action} exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
+  ticketDeleted: '✅ Ticket *{ticketNumber}* eliminado correctamente.',
   statusChanged:
     'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
   reparadoMessage:
