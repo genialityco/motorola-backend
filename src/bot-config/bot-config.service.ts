@@ -11,6 +11,10 @@ export interface BotMessages {
   cancelled: string;
   goodbye: string;
   viewTicketOptions: string;
+  backToMenuKeyword: string;
+  adminRequestUpdate: string;
+  ticketSelectPrompt: string;
+  ticketListItemTemplate: string;
 }
 
 export interface TicketField {
@@ -52,6 +56,11 @@ export const DEFAULT_MESSAGES: BotMessages = {
   cancelled: 'Operación cancelada.',
   goodbye: 'Hasta luego 👋. Escribe cualquier mensaje para volver al menú.',
   viewTicketOptions: '¿Qué deseas ver?\n1. Info del ticket\n2. Ver fotos',
+  backToMenuKeyword: 'INICIO',
+  adminRequestUpdate:
+    '📋 El administrador te solicita actualizar el campo *{fieldLabel}* de tu ticket *{ticketNumber}*.\n\nPara actualizar esta información, selecciona la opción *3* (Editar) en el menú.',
+  ticketSelectPrompt: 'Selecciona el número del ticket que deseas *{action}*:',
+  ticketListItemTemplate: '{index}. 📋 *{ticketNumber}*\n   Estado: {estado}\n   Fecha: {fecha}',
 };
 
 export const DEFAULT_FIELDS: TicketField[] = [

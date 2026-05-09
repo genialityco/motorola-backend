@@ -37,8 +37,7 @@ const MENU_FALLBACK =
   `1. Para crear un ticket presiona 1\n` +
   `2. Para ver el estado de tus tickets presiona 2\n` +
   `3. Para editar un ticket presiona 3\n` +
-  `4. Para eliminar un ticket presiona 4\n` +
-  `5. Para finalizar un ticket presiona 5`;
+  `4. Para eliminar un ticket presiona 4\n` ;
 
 function normalizeText(text: string): string {
   return text
@@ -102,14 +101,17 @@ export class WhatsappService {
       const description = descField ? String(getNestedValue(extraFields, descField.key) || '') : '';
 
       const msgs = await this.botConfig.getMessages().catch(() => null);
+      const extraVarsReparado = this.flattenExtraFieldsForInterpolation(
+        (ticketData.extraFields as Record<string, unknown>) || {},
+      );
       const msg = repairPhotos.length > 0
         ? interpolate(
             msgs?.reparadoMessage ?? 'Estas son las evidencias de que su ticket *{ticketNumber}* ha sido reparado:',
-            { ticketNumber: String(ticketData.ticketNumber), description },
+            { ticketNumber: String(ticketData.ticketNumber), description, ...extraVarsReparado },
           )
         : interpolate(
             msgs?.statusChanged ?? 'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
-            { ticketNumber: String(ticketData.ticketNumber), prevStatus, newStatus },
+            { ticketNumber: String(ticketData.ticketNumber), prevStatus, newStatus, ...extraVarsReparado },
           );
 
       await this.saveMessage(phone, 'bot', msg).catch((err) =>
@@ -125,9 +127,12 @@ export class WhatsappService {
       }
     } else {
       const msgs = await this.botConfig.getMessages().catch(() => null);
+      const extraVars = this.flattenExtraFieldsForInterpolation(
+        (ticketData.extraFields as Record<string, unknown>) || {},
+      );
       const msg = interpolate(
         msgs?.statusChanged ?? 'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
-        { ticketNumber: String(ticketData.ticketNumber), prevStatus, newStatus },
+        { ticketNumber: String(ticketData.ticketNumber), prevStatus, newStatus, ...extraVars },
       );
       await this.saveMessage(phone, 'bot', msg).catch(() => null);
       await this.sendMessage(phone, msg).catch(() => null);
@@ -230,35 +235,66 @@ export class WhatsappService {
     return prompt;
   }
 
-  private formatTicketsList(tickets: PendingTicket[]): string {
-    return tickets
-      .map((t, i) => {
-        const lines = [`${i + 1}. *${t.ticketNumber}*`];
-        if (t.extraFields) {
-          const firstText = Object.entries(t.extraFields).find(([, v]) => typeof v === 'string' && v);
-          if (firstText) lines.push(`   ${firstText[1]}`);
-        }
-        lines.push(`   Estado: ${t.status}`);
-        return lines.join('\n');
-      })
-      .join('\n\n');
-  }
-
-  private formatTicketsListWithDate(tickets: PendingTicket[]): string {
+  private formatTicketsListDetailed(tickets: PendingTicket[], allFields: TicketField[], template?: string): string {
+    const textFields = allFields.filter(f => f.type !== 'photo' && f.type !== 'video');
     return tickets
       .map((t, i) => {
         const dateStr = t.createdAt
           ? new Date(t.createdAt).toLocaleDateString('es-CO')
           : 'Sin fecha';
-        const lines = [`${i + 1}. *${t.ticketNumber}*`, `   Fecha: ${dateStr}`];
-        if (t.extraFields) {
-          const firstText = Object.entries(t.extraFields).find(([, v]) => typeof v === 'string' && v);
-          if (firstText) lines.push(`   ${firstText[1]}`);
+
+        if (template) {
+          const extraVars = this.flattenExtraFieldsForInterpolation(
+            (t.extraFields as Record<string, unknown>) || {},
+          );
+          const vars: Record<string, string> = {
+            index: String(i + 1),
+            ticketNumber: t.ticketNumber,
+            estado: t.status,
+            fecha: dateStr,
+            ...extraVars,
+          };
+          const rendered = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
+          return rendered.split('\n').filter(line => line.trim() !== '').join('\n');
         }
-        lines.push(`   Estado: ${t.status}`);
+
+        const lines = [
+          `${i + 1}. 📋 *${t.ticketNumber}*`,
+          `   Estado: ${t.status}`,
+          `   Fecha: ${dateStr}`,
+        ];
+        for (const field of textFields) {
+          const value = getNestedValue((t.extraFields as Record<string, unknown>) || {}, field.key);
+          if (value && typeof value === 'string') {
+            const display = value === 'true' ? 'Sí' : value === 'false' ? 'No' : value;
+            lines.push(`   ${field.label}: ${display}`);
+          }
+        }
         return lines.join('\n');
       })
       .join('\n\n');
+  }
+
+  private flattenExtraFieldsForInterpolation(extraFields: Record<string, unknown>): Record<string, string> {
+    const result: Record<string, string> = {};
+    const process = (obj: Record<string, unknown>, prefix: string) => {
+      for (const [key, val] of Object.entries(obj)) {
+        const fullKey = prefix ? `${prefix}.${key}` : key;
+        if (typeof val === 'string') {
+          result[fullKey] = val;
+          result[key] = val;
+          const underscored = fullKey.replace(/\./g, '_');
+          if (underscored !== fullKey) result[underscored] = val;
+        } else if (Array.isArray(val)) {
+          result[key] = `${val.length} elemento(s)`;
+          result[fullKey] = result[key];
+        } else if (val && typeof val === 'object') {
+          process(val as Record<string, unknown>, fullKey);
+        }
+      }
+    };
+    process(extraFields, '');
+    return result;
   }
 
   private async getTicketsByPhone(phone: string): Promise<PendingTicket[]> {
@@ -380,6 +416,22 @@ export class WhatsappService {
     const send = (text: string) => this.reply(phone, text, onResponse);
     const sendPhoto = (url: string) => this.reply(phone, '[imagen]', onResponse, url);
 
+    const msgs = await this.botConfig.getMessages().catch(() => null);
+    const backKeyword = normalizeText(msgs?.backToMenuKeyword || 'INICIO');
+
+    if (state !== 'IDLE' && body && normalizeText(body) === backKeyword) {
+      await sessionRef.set({
+        state: 'IDLE',
+        fieldIndex: null, fieldValues: null, tempFieldPhotos: null,
+        pendingTickets: null, pendingTicketId: null, pendingTicketData: null,
+        editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null,
+        requestedFieldKey: null, requestedFieldLabel: null, requestedTicketId: null,
+        tempEditPhotos: null, pendingPhotoIndex: null,
+      }, { merge: true });
+      await send(msgs?.menu ?? MENU_FALLBACK);
+      return;
+    }
+
     // ─── IDLE ────────────────────────────────────────────────────────────────
     if (state === 'IDLE') {
       if (body === '1') {
@@ -398,38 +450,36 @@ export class WhatsappService {
       } else if (body === '2') {
         const myTickets = await this.getTicketsByPhone(phone);
         if (myTickets.length === 0) {
-          await send('No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?');
+          await send(msgs?.noTickets ?? 'No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?');
         } else {
-          const list = this.formatTicketsListWithDate(myTickets);
-          await send(`Tus tickets:\n\n${list}\n\nResponde el número del ticket que deseas consultar:`);
-          await sessionRef.set(
-            { state: 'WAITING_TICKET_SELECTION_VIEW', pendingTickets: myTickets },
-            { merge: true },
-          );
+          const allFields = await this.botConfig.getFields().catch(() => []);
+          const list = this.formatTicketsListDetailed(myTickets, allFields, msgs?.ticketListItemTemplate);
+          await send(`Tus tickets:\n\n${list}`);
         }
 
       } else if (body === '3' || body === '4' || body === '5') {
         const tickets = await this.getTicketsByPhone(phone);
         if (tickets.length === 0) {
-          await send('No tienes tickets registrados. ¿Puedo ayudarte en algo más?');
+          await send(msgs?.noTickets ?? 'No tienes tickets registrados. ¿Puedo ayudarte en algo más?');
           return;
         }
-        const list = this.formatTicketsList(tickets);
+        const allFields = await this.botConfig.getFields().catch(() => []);
+        const list = this.formatTicketsListDetailed(tickets, allFields, msgs?.ticketListItemTemplate);
         await sessionRef.set({ pendingTickets: tickets }, { merge: true });
 
+        const selectTemplate = msgs?.ticketSelectPrompt ?? 'Selecciona el número del ticket que deseas *{action}*:';
         if (body === '3') {
-          await send(`Tus tickets:\n${list}\n\nSelecciona el número del ticket que deseas *editar*:`);
+          await send(`Tus tickets:\n\n${list}\n\n${interpolate(selectTemplate, { action: 'editar' })}`);
           await sessionRef.set({ state: 'WAITING_TICKET_SELECTION_EDIT' }, { merge: true });
         } else if (body === '4') {
-          await send(`Tus tickets:\n${list}\n\nSelecciona el número del ticket que deseas *eliminar*:`);
+          await send(`Tus tickets:\n\n${list}\n\n${interpolate(selectTemplate, { action: 'eliminar' })}`);
           await sessionRef.set({ state: 'WAITING_TICKET_SELECTION_DELETE' }, { merge: true });
         } else {
-          await send(`Tus tickets:\n${list}\n\nSelecciona el número del ticket que deseas *finalizar*:`);
+          await send(`Tus tickets:\n\n${list}\n\n${interpolate(selectTemplate, { action: 'finalizar' })}`);
           await sessionRef.set({ state: 'WAITING_TICKET_SELECTION_FINALIZE' }, { merge: true });
         }
 
       } else {
-        const msgs = await this.botConfig.getMessages().catch(() => null);
         await send(msgs?.menu ?? MENU_FALLBACK);
       }
 
@@ -825,7 +875,6 @@ export class WhatsappService {
     // ─── ACTUALIZACIÓN SOLICITADA POR ADMIN ──────────────────────────────────
     } else if (state === 'WAITING_ADMIN_REQUESTED_UPDATE') {
       await sessionRef.set({ state: 'IDLE', requestedFieldKey: null, requestedFieldLabel: null, requestedTicketId: null }, { merge: true });
-      const msgs = await this.botConfig.getMessages().catch(() => null);
       await send(msgs?.menu ?? MENU_FALLBACK);
 
     // ─── RESET ───────────────────────────────────────────────────────────────
@@ -849,9 +898,20 @@ export class WhatsappService {
     if (!phone) throw new Error('El ticket no tiene teléfono de reportante');
     const ticketNumber: string = ticket.ticketNumber;
 
-    const msg = customMessage
-      ? `📋 El administrador te solicita actualizar el campo *${fieldLabel}* de tu ticket *${ticketNumber}*.\n\n_${customMessage}_\n\nPara actualizar esta información, selecciona la opción *3* (Editar) en el menú.`
-      : `📋 El administrador te solicita actualizar el campo *${fieldLabel}* de tu ticket *${ticketNumber}*.\n\nPara actualizar esta información, selecciona la opción *3* (Editar) en el menú.`;
+    const msgs = await this.botConfig.getMessages().catch(() => null);
+    const template =
+      msgs?.adminRequestUpdate ??
+      '📋 El administrador te solicita actualizar el campo *{fieldLabel}* de tu ticket *{ticketNumber}*.\n\nPara actualizar esta información, selecciona la opción *3* (Editar) en el menú.';
+
+    const extraVars = this.flattenExtraFieldsForInterpolation(
+      (ticket.extraFields as Record<string, unknown>) || {},
+    );
+    const msg = interpolate(template, {
+      fieldLabel,
+      ticketNumber,
+      customMessage: customMessage || '',
+      ...extraVars,
+    });
 
     const sessionRef = db.collection('whatsapp_sessions').doc(phone);
     await sessionRef.set(
