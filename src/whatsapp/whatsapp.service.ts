@@ -645,8 +645,11 @@ export class WhatsappService {
       const editableFields = allFields.filter(f => f.source === 'bot');
       const fieldList = editableFields.map((f, i) => `${i + 1}. ${f.label}`).join('\n');
 
+      const extraVarsEdit = this.flattenExtraFieldsForInterpolation(
+        (selectedTicket.extraFields as Record<string, unknown>) || {},
+      );
       await send(
-        interpolate(msgsEdit2.editFieldPrompt, { ticketNumber: selectedTicket.ticketNumber, fieldList }),
+        interpolate(msgsEdit2.editFieldPrompt, { ticketNumber: selectedTicket.ticketNumber, fieldList, ...extraVarsEdit }),
       );
       await sessionRef.set(
         {
