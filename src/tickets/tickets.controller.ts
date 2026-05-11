@@ -16,6 +16,7 @@ import * as XLSX from 'xlsx';
 import { TicketsService } from './tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
+import { BotConfigService, interpolate } from '../bot-config/bot-config.service';
 
 type MulterFile = {
   buffer: Buffer;
@@ -32,6 +33,7 @@ export class TicketsController {
   constructor(
     private readonly ticketsService: TicketsService,
     private readonly whatsappService: WhatsappService,
+    private readonly botConfigService: BotConfigService,
   ) {}
 
   @Post('import')
@@ -96,7 +98,12 @@ export class TicketsController {
       await this.ticketsService.deletePhotoFromField(ticketId, fieldKey, photoIndex);
 
     if (reporterPhone) {
-      const msg = `Para el ticket número *${ticketNumber}* vuelva adjuntar las evidencias del campo ${fieldKey}.`;
+      const [messages, fields] = await Promise.all([
+        this.botConfigService.getMessages(),
+        this.botConfigService.getFields(),
+      ]);
+      const fieldLabel = fields.find((f) => f.key === fieldKey)?.label ?? fieldKey;
+      const msg = interpolate(messages.deletePhotoRequest, { ticketNumber: String(ticketNumber), fieldLabel });
       await this.whatsappService.saveMessage(reporterPhone, 'bot', msg).catch(() => null);
       await this.whatsappService.sendMessage(reporterPhone, msg).catch(() => null);
     }

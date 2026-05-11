@@ -457,7 +457,7 @@ export class WhatsappService {
           await send(`Tus tickets:\n\n${list}`);
         }
 
-      } else if (body === '3' || body === '4' || body === '5') {
+      } else if (body === '3' || body === '4' ) {
         const tickets = await this.getTicketsByPhone(phone);
         if (tickets.length === 0) {
           await send(msgs?.noTickets ?? 'No tienes tickets registrados. ¿Puedo ayudarte en algo más?');
@@ -474,9 +474,6 @@ export class WhatsappService {
         } else if (body === '4') {
           await send(`Tus tickets:\n\n${list}\n\n${interpolate(selectTemplate, { action: 'eliminar' })}`);
           await sessionRef.set({ state: 'WAITING_TICKET_SELECTION_DELETE' }, { merge: true });
-        } else {
-          await send(`Tus tickets:\n\n${list}\n\n${interpolate(selectTemplate, { action: 'finalizar' })}`);
-          await sessionRef.set({ state: 'WAITING_TICKET_SELECTION_FINALIZE' }, { merge: true });
         }
 
       } else {
@@ -641,12 +638,15 @@ export class WhatsappService {
       }
       const selectedTicket = tickets[idx];
 
-      const allFields = await this.botConfig.getFields();
+      const [allFields, msgsEdit2] = await Promise.all([
+        this.botConfig.getFields(),
+        this.botConfig.getMessages(),
+      ]);
       const editableFields = allFields.filter(f => f.source === 'bot');
       const fieldList = editableFields.map((f, i) => `${i + 1}. ${f.label}`).join('\n');
 
       await send(
-        `¿Qué deseas editar en el ticket *${selectedTicket.ticketNumber}*?\n\n${fieldList}\n0. Cancelar`,
+        interpolate(msgsEdit2.editFieldPrompt, { ticketNumber: selectedTicket.ticketNumber, fieldList }),
       );
       await sessionRef.set(
         {

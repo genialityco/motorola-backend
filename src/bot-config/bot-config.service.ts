@@ -14,6 +14,8 @@ export interface BotMessages {
   viewTicketOptions: string;
   backToMenuKeyword: string;
   adminRequestUpdate: string;
+  deletePhotoRequest: string;
+  editFieldPrompt: string;
   ticketSelectPrompt: string;
   ticketListItemTemplate: string;
 }
@@ -44,8 +46,7 @@ export const DEFAULT_MESSAGES: BotMessages = {
     '1. Para crear un ticket presiona 1\n' +
     '2. Para ver el estado de tus tickets presiona 2\n' +
     '3. Para editar un ticket presiona 3\n' +
-    '4. Para eliminar un ticket presiona 4\n' +
-    '5. Para finalizar un ticket presiona 5',
+    '4. Para eliminar un ticket presiona 4\n',
   ticketCreated:
     '✅ Ticket *{ticketNumber}* {action} exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
   ticketDeleted: '✅ Ticket *{ticketNumber}* eliminado correctamente.',
@@ -61,6 +62,9 @@ export const DEFAULT_MESSAGES: BotMessages = {
   backToMenuKeyword: 'INICIO',
   adminRequestUpdate:
     '📋 El administrador te solicita actualizar el campo *{fieldLabel}* de tu ticket *{ticketNumber}*.\n\nPara actualizar esta información, selecciona la opción *3* (Editar) en el menú.',
+  deletePhotoRequest:
+    'Para el ticket número *{ticketNumber}* vuelva adjuntar las evidencias del campo {fieldLabel}.',
+  editFieldPrompt: '¿Qué deseas editar en el ticket *{ticketNumber}*?\n\n{fieldList}\n0. Cancelar',
   ticketSelectPrompt: 'Selecciona el número del ticket que deseas *{action}*:',
   ticketListItemTemplate: '{index}. 📋 *{ticketNumber}*\n   Estado: {estado}\n   Fecha: {fecha}',
 };
