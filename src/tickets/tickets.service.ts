@@ -12,7 +12,8 @@ type TicketStatus =
   | 'EN_REPARACION'
   | 'REPARADO'
   | 'ENTREGADO'
-  | 'FINALIZADO';
+  | 'FINALIZADO'
+  | 'ARCHIVADO';
 
 const VALID_STATUSES: TicketStatus[] = [
   'REPORTADO',
@@ -22,6 +23,68 @@ const VALID_STATUSES: TicketStatus[] = [
   'ENTREGADO',
   'FINALIZADO',
 ];
+
+const ALL_VALID_STATUSES: TicketStatus[] = [
+  'REPORTADO',
+  'REVISION',
+  'EN_REPARACION',
+  'REPARADO',
+  'ENTREGADO',
+  'FINALIZADO',
+  'ARCHIVADO',
+];
+
+export interface BotFieldForImport {
+  key: string;
+  label: string;
+  type: string;
+  required: boolean;
+  normalize: boolean;
+  options?: string[];
+}
+
+export interface ImportedTicketResult {
+  fila: number;
+  ticketNumber: string;
+  telefono: string;
+}
+
+export interface FailedTicketRow {
+  fila: number;
+  razon: string;
+}
+
+export interface ImportResult {
+  created: ImportedTicketResult[];
+  failed: FailedTicketRow[];
+}
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`;
+  return digits;
+}
+
+function isValidPhone(normalized: string): boolean {
+  return normalized.length >= 7 && /^\d+$/.test(normalized);
+}
+
+function setNestedField(
+  obj: Record<string, unknown>,
+  path: string,
+  value: unknown,
+): void {
+  const parts = path.split('.');
+  let current = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const part = parts[i];
+    if (!current[part] || typeof current[part] !== 'object') {
+      current[part] = {};
+    }
+    current = current[part] as Record<string, unknown>;
+  }
+  current[parts[parts.length - 1]] = value;
+}
 
 function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
   return path.split('.').reduce<unknown>((current, part) => {
@@ -137,6 +200,136 @@ export class TicketsService {
       [`extraFields.${fieldKey}`]: value,
       'timestamps.updatedAt': Date.now(),
     });
+  }
+
+  async getConfigFields(): Promise<BotFieldForImport[]> {
+    const snap = await this.firebase.db
+      .collection('bot_config')
+      .doc('ticket_fields')
+      .get();
+    if (!snap.exists) return [];
+    const data = snap.data();
+    return ((data?.fields ?? []) as BotFieldForImport[]).filter(
+      (f) => f.type !== 'photo' && f.type !== 'video',
+    );
+  }
+
+  async importTickets(
+    rows: Array<Record<string, string>>,
+    configFields: BotFieldForImport[],
+  ): Promise<ImportResult> {
+    const created: ImportedTicketResult[] = [];
+    const failed: FailedTicketRow[] = [];
+    const db = this.firebase.db;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const fila = i + 2; // row 1 is headers in Excel
+
+      try {
+        // ── Validate phone ─────────────────────────────────────────────
+        const rawPhone = String(row['Teléfono Reportante'] ?? '').trim();
+        if (!rawPhone) {
+          failed.push({ fila, razon: 'Teléfono Reportante es requerido' });
+          continue;
+        }
+        const phone = normalizePhone(rawPhone);
+        if (!isValidPhone(phone)) {
+          failed.push({
+            fila,
+            razon: `Teléfono inválido: "${rawPhone}". Debe contener al menos 7 dígitos.`,
+          });
+          continue;
+        }
+
+        // ── Validate status ────────────────────────────────────────────
+        const rawStatus = String(row['Estado'] ?? '').trim().toUpperCase();
+        const status: TicketStatus = (ALL_VALID_STATUSES as string[]).includes(
+          rawStatus,
+        )
+          ? (rawStatus as TicketStatus)
+          : 'REPORTADO';
+
+        // ── Build extraFields ──────────────────────────────────────────
+        const extraFields: Record<string, unknown> = {};
+        const fieldErrors: string[] = [];
+
+        for (const field of configFields) {
+          const colLabel = field.label || field.key;
+          const rawValue = String(row[colLabel] ?? '').trim();
+
+          if (!rawValue) {
+            if (field.required) {
+              fieldErrors.push(`Campo requerido vacío: "${colLabel}"`);
+            }
+            continue;
+          }
+
+          if (field.type === 'numeric' && isNaN(Number(rawValue))) {
+            fieldErrors.push(`"${colLabel}" debe ser numérico, se recibió: "${rawValue}"`);
+            continue;
+          }
+
+          if (
+            field.type === 'list' &&
+            field.options &&
+            field.options.length > 0 &&
+            !field.options.includes(rawValue)
+          ) {
+            fieldErrors.push(
+              `"${colLabel}" debe ser una de: ${field.options.join(', ')}. Se recibió: "${rawValue}"`,
+            );
+            continue;
+          }
+
+          const finalValue = field.normalize ? rawValue.toUpperCase() : rawValue;
+          setNestedField(extraFields, field.key, finalValue);
+        }
+
+        if (fieldErrors.length > 0) {
+          failed.push({ fila, razon: fieldErrors.join(' | ') });
+          continue;
+        }
+
+        // ── Generate unique ticket number ──────────────────────────────
+        const ticketNumber = `TKT-${Math.floor(Math.random() * 90000) + 10000}`;
+
+        // ── Reporter name ──────────────────────────────────────────────
+        const reporterName =
+          String(row['Reportado Por'] ?? '').trim() || 'Usuario WhatsApp';
+
+        // ── Create ticket ──────────────────────────────────────────────
+        await db.collection('tickets').add({
+          ticketNumber,
+          status,
+          reporter: { phone, name: reporterName },
+          timestamps: { createdAt: Date.now(), updatedAt: Date.now() },
+          extraFields,
+        });
+
+        // ── Upsert host ────────────────────────────────────────────────
+        const hostRef = db.collection('hosts').doc(phone);
+        const hostSnap = await hostRef.get();
+        if (!hostSnap.exists) {
+          const hostName =
+            reporterName !== 'Usuario WhatsApp' ? reporterName : phone;
+          await hostRef.set({
+            nombre: hostName,
+            telefono: phone,
+            creadoEn: Date.now(),
+          });
+        }
+
+        created.push({ fila, ticketNumber, telefono: phone });
+      } catch (err) {
+        failed.push({
+          fila,
+          razon: `Error interno: ${(err as Error).message}`,
+        });
+      }
+    }
+
+    return { created, failed };
   }
 
   async uploadToStorage(

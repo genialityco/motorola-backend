@@ -12,6 +12,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import * as XLSX from 'xlsx';
 import { TicketsService } from './tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
@@ -32,6 +33,33 @@ export class TicketsController {
     private readonly ticketsService: TicketsService,
     private readonly whatsappService: WhatsappService,
   ) {}
+
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  async importTickets(@UploadedFile() file: MulterFile) {
+    if (!file) throw new BadRequestException('No se adjuntó archivo Excel.');
+
+    let rows: Array<Record<string, string>>;
+    try {
+      const wb = XLSX.read(file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, {
+        defval: '',
+        raw: false,
+      });
+    } catch {
+      throw new BadRequestException(
+        'No se pudo leer el archivo. Asegúrate de que sea un Excel válido (.xlsx).',
+      );
+    }
+
+    if (rows.length === 0) {
+      throw new BadRequestException('El archivo no contiene filas de datos.');
+    }
+
+    const configFields = await this.ticketsService.getConfigFields();
+    return this.ticketsService.importTickets(rows, configFields);
+  }
 
   @Post(':id/transition')
   async transition(
