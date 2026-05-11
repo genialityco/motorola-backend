@@ -30,6 +30,7 @@ interface PendingTicket {
   status: string;
   extraFields?: Record<string, string | string[]>;
   createdAt?: number;
+  updatedAt?: number;
 }
 
 const MENU_FALLBACK =
@@ -302,6 +303,7 @@ export class WhatsappService {
       .collection('tickets')
       .where('reporter.phone', '==', phone)
       .get();
+    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return snap.docs
       .map((d) => {
         const data = d.data();
@@ -311,9 +313,17 @@ export class WhatsappService {
           status: data.status as string,
           extraFields: (data.extraFields as Record<string, string | string[]>) || {},
           createdAt: data.timestamps?.createdAt as number | undefined,
+          updatedAt: data.timestamps?.updatedAt as number | undefined,
         };
       })
-      .filter((t) => t.status !== 'ARCHIVADO');
+      .filter((t) => {
+        if (t.status === 'ARCHIVADO') return false;
+        if (t.status === 'FINALIZADO') {
+          const ref = t.updatedAt ?? t.createdAt ?? 0;
+          return ref >= thirtyDaysAgo;
+        }
+        return true;
+      });
   }
 
   async uploadBufferToStorage(buffer: Buffer, mimeType: string, phone: string): Promise<string> {
@@ -695,7 +705,7 @@ export class WhatsappService {
         const currentValue = (getNestedValue(ticketData.extraFields as Record<string, unknown> ?? {}, selectedField.key) as string) || 'Sin valor';
         const currentDisplay = currentValue === 'true' ? 'Sí' : currentValue === 'false' ? 'No' : currentValue;
         await send(`Valor actual: *${currentDisplay}*\n\n${this.buildFieldQuestion(selectedField)}`);
-        await sessionRef.set({ state: 'WAITING_EDIT_FIELD_VALUE', editFieldKey: selectedField.key, editFieldType: selectedField.type, editFieldOptions: selectedField.options || [] }, { merge: true });
+        await sessionRef.set({ state: 'WAITING_EDIT_FIELD_VALUE', editFieldKey: selectedField.key, editFieldType: selectedField.type, editFieldOptions: selectedField.options || [], editFieldNormalize: selectedField.normalize }, { merge: true });
       }
 
     // ─── EDITAR CAMPO DE TEXTO ────────────────────────────────────────────────
@@ -708,6 +718,7 @@ export class WhatsappService {
       const editFieldKey = session.editFieldKey as string;
       const editFieldType = session.editFieldType as string;
       const editFieldOptions = (session.editFieldOptions as string[]) || [];
+      const editFieldNormalize = session.editFieldNormalize as boolean | undefined;
 
       let newValue: string;
       if (editFieldType === 'list' && editFieldOptions.length > 0) {
@@ -729,7 +740,7 @@ export class WhatsappService {
           return;
         }
       } else {
-        newValue = body.trim();
+        newValue = editFieldNormalize ? body.trim().toUpperCase() : body.trim();
       }
 
       if (ticketId) {
