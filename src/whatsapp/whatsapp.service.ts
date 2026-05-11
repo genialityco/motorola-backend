@@ -940,12 +940,16 @@ export class WhatsappService {
     const extraVars = this.flattenExtraFieldsForInterpolation(
       (ticket.extraFields as Record<string, unknown>) || {},
     );
-    const msg = interpolate(template, {
+    let msg = interpolate(template, {
       fieldLabel,
       ticketNumber,
       customMessage: customMessage || '',
       ...extraVars,
     });
+
+    if (customMessage?.trim()) {
+      msg += `\n\n_${customMessage.trim()}_`;
+    }
 
     const sessionRef = db.collection('whatsapp_sessions').doc(phone);
     await sessionRef.set(
