@@ -460,7 +460,7 @@ export class WhatsappService {
       } else if (body === '2') {
         const myTickets = await this.getTicketsByPhone(phone);
         if (myTickets.length === 0) {
-          await send(msgs?.noTickets ?? 'No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?');
+          await send(msgs?.noTickets ?? 'No tienes tickets disponibles. ¿Puedo ayudarte en algo más?');
         } else {
           const allFields = await this.botConfig.getFields().catch(() => []);
           const list = this.formatTicketsListDetailed(myTickets, allFields, msgs?.ticketListItemTemplate);
@@ -469,11 +469,10 @@ export class WhatsappService {
 
       } else if (body === '3' || body === '4' ) {
         const allTickets = await this.getTicketsByPhone(phone);
-        const tickets = body === '4'
-          ? allTickets.filter((t) => t.status !== 'FINALIZADO')
-          : allTickets;
+        const tickets = allTickets.filter((t) => t.status !== 'FINALIZADO');
         if (tickets.length === 0) {
-          await send(msgs?.noTickets ?? 'No tienes tickets registrados. ¿Puedo ayudarte en algo más?');
+          const action = body === '3' ? 'editar' : 'eliminar';
+          await send(msgs?.noTickets ?? `No tienes tickets disponibles para ${action}. ¿Puedo ayudarte en algo más?`);
           return;
         }
         const allFields = await this.botConfig.getFields().catch(() => []);
