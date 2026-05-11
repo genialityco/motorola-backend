@@ -679,7 +679,7 @@ export class WhatsappService {
       const selectedField = editableFields[fieldIdx];
 
       if (selectedField.type === 'photo') {
-        const photos = (ticketData.extraFields?.[selectedField.key] as string[]) || [];
+        const photos = (getNestedValue(ticketData.extraFields as Record<string, unknown> ?? {}, selectedField.key) as string[]) || [];
         const hasPhotos = photos.length > 0;
         const photoList = hasPhotos
           ? `Fotos actuales: ${photos.length}\n\n`
@@ -689,7 +689,7 @@ export class WhatsappService {
         );
         await sessionRef.set({ state: 'WAITING_EDIT_PHOTO_ACTION', editFieldKey: selectedField.key }, { merge: true });
       } else {
-        const currentValue = (ticketData.extraFields?.[selectedField.key] as string) || 'Sin valor';
+        const currentValue = (getNestedValue(ticketData.extraFields as Record<string, unknown> ?? {}, selectedField.key) as string) || 'Sin valor';
         const currentDisplay = currentValue === 'true' ? 'Sí' : currentValue === 'false' ? 'No' : currentValue;
         await send(`Valor actual: *${currentDisplay}*\n\n${this.buildFieldQuestion(selectedField)}`);
         await sessionRef.set({ state: 'WAITING_EDIT_FIELD_VALUE', editFieldKey: selectedField.key, editFieldType: selectedField.type, editFieldOptions: selectedField.options || [] }, { merge: true });
