@@ -40,6 +40,21 @@ const MENU_FALLBACK =
   `3. Para editar un ticket presiona 3\n` +
   `4. Para eliminar un ticket presiona 4\n` ;
 
+const DEFAULT_SESSION_TIMEOUT_HOURS = 24;
+
+const CREATE_FLOW_STATES = ['WAITING_FIELD'];
+
+const EDIT_FLOW_STATES = [
+  'WAITING_TICKET_SELECTION_EDIT',
+  'WAITING_EDIT_FIELD_SELECTION',
+  'WAITING_EDIT_FIELD_VALUE',
+  'WAITING_EDIT_PHOTO_ACTION',
+  'WAITING_EDIT_ADD_PHOTOS',
+  'WAITING_EDIT_PHOTO_SELECTION',
+  'WAITING_EDIT_NEW_PHOTO',
+  'WAITING_ADMIN_REQUESTED_UPDATE',
+];
+
 function normalizeText(text: string): string {
   return text
     .trim()
@@ -441,6 +456,35 @@ export class WhatsappService {
       await send(msgs?.menu ?? MENU_FALLBACK);
       return;
     }
+
+    // ─── SESSION EXPIRY CHECK ────────────────────────────────────────────────
+    if (state !== 'IDLE' && session.lastActivity) {
+      const settings = await this.botConfig.getSettings().catch(() => null);
+      const timeoutHours = settings?.sessionTimeoutHours ?? DEFAULT_SESSION_TIMEOUT_HOURS;
+      const elapsed = Date.now() - (session.lastActivity as number);
+      if (elapsed > timeoutHours * 60 * 60 * 1000) {
+        await sessionRef.set({
+          state: 'IDLE', lastActivity: Date.now(),
+          fieldIndex: null, fieldValues: null, tempFieldPhotos: null,
+          pendingTickets: null, pendingTicketId: null, pendingTicketData: null,
+          editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null,
+          requestedFieldKey: null, requestedFieldLabel: null, requestedTicketId: null,
+          tempEditPhotos: null, pendingPhotoIndex: null,
+        }, { merge: true });
+        const hours = String(timeoutHours);
+        if (CREATE_FLOW_STATES.includes(state)) {
+          await send(interpolate(msgs?.sessionExpiredCreate ?? 'Tu sesión para crear el ticket expiró por inactividad ({hours} horas). Por favor, selecciona la opción *1* para comenzar nuevamente.', { hours }));
+        } else if (EDIT_FLOW_STATES.includes(state)) {
+          await send(interpolate(msgs?.sessionExpiredEdit ?? 'Tu sesión para editar el ticket expiró por inactividad ({hours} horas). Por favor, selecciona la opción *3* para editar nuevamente.', { hours }));
+        } else {
+          await send(interpolate(msgs?.sessionExpiredGeneric ?? 'Tu sesión expiró por inactividad ({hours} horas). Por favor, selecciona una opción del menú.', { hours }));
+        }
+        return;
+      }
+    }
+
+    // Actualizar última actividad
+    await sessionRef.set({ lastActivity: Date.now() }, { merge: true });
 
     // ─── IDLE ────────────────────────────────────────────────────────────────
     if (state === 'IDLE') {

@@ -1,5 +1,5 @@
 import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
-import { BotConfigService, BotMessages, TicketField, SystemFieldConfig } from './bot-config.service';
+import { BotConfigService, BotMessages, BotSettings, TicketField, SystemFieldConfig } from './bot-config.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 
 @Controller('config')
@@ -20,5 +20,15 @@ export class BotConfigController {
   @Patch('fields')
   updateFields(@Body() body: { fields: TicketField[]; systemFields?: SystemFieldConfig[] }) {
     return this.botConfig.updateFields(body.fields, body.systemFields);
+  }
+
+  @Get('settings')
+  getSettings() {
+    return this.botConfig.getSettings();
+  }
+
+  @Patch('settings')
+  updateSettings(@Body() body: Partial<BotSettings>) {
+    return this.botConfig.updateSettings(body);
   }
 }

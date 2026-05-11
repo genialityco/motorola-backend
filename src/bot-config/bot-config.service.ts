@@ -18,6 +18,13 @@ export interface BotMessages {
   editFieldPrompt: string;
   ticketSelectPrompt: string;
   ticketListItemTemplate: string;
+  sessionExpiredCreate: string;
+  sessionExpiredEdit: string;
+  sessionExpiredGeneric: string;
+}
+
+export interface BotSettings {
+  sessionTimeoutHours: number;
 }
 
 export interface TicketField {
@@ -67,6 +74,13 @@ export const DEFAULT_MESSAGES: BotMessages = {
   editFieldPrompt: '¿Qué deseas editar en el ticket *{ticketNumber}*?\n\n{fieldList}\n0. Cancelar',
   ticketSelectPrompt: 'Selecciona el número del ticket que deseas *{action}*:',
   ticketListItemTemplate: '{index}. 📋 *{ticketNumber}*\n   Estado: {estado}\n   Fecha: {fecha}',
+  sessionExpiredCreate: 'Tu sesión para crear el ticket expiró por inactividad ({hours} horas). Por favor, selecciona la opción *1* para comenzar nuevamente.',
+  sessionExpiredEdit: 'Tu sesión para editar el ticket expiró por inactividad ({hours} horas). Por favor, selecciona la opción *3* para editar nuevamente.',
+  sessionExpiredGeneric: 'Tu sesión expiró por inactividad ({hours} horas). Por favor, selecciona una opción del menú.',
+};
+
+export const DEFAULT_SETTINGS: BotSettings = {
+  sessionTimeoutHours: 24,
 };
 
 export const DEFAULT_FIELDS: TicketField[] = [
@@ -144,6 +158,17 @@ export class BotConfigService {
       .doc('ticket_fields')
       .set(data);
     this.invalidateCache();
+  }
+
+  async getSettings(): Promise<BotSettings> {
+    const snap = await this.firebase.db.collection('bot_config').doc('settings').get();
+    const data = snap.exists ? (snap.data() as Partial<BotSettings>) : {};
+    return { ...DEFAULT_SETTINGS, ...data };
+  }
+
+  async updateSettings(settings: Partial<BotSettings>): Promise<BotSettings> {
+    await this.firebase.db.collection('bot_config').doc('settings').set(settings, { merge: true });
+    return this.getSettings();
   }
 
   async getAll(): Promise<{ messages: BotMessages; fields: TicketField[] }> {
