@@ -468,7 +468,10 @@ export class WhatsappService {
         }
 
       } else if (body === '3' || body === '4' ) {
-        const tickets = await this.getTicketsByPhone(phone);
+        const allTickets = await this.getTicketsByPhone(phone);
+        const tickets = body === '4'
+          ? allTickets.filter((t) => t.status !== 'FINALIZADO')
+          : allTickets;
         if (tickets.length === 0) {
           await send(msgs?.noTickets ?? 'No tienes tickets registrados. ¿Puedo ayudarte en algo más?');
           return;
