@@ -240,7 +240,8 @@ export class WhatsappService {
     const prompt = field.question?.trim() || field.placeholder?.trim() || field.label;
     if (field.type === 'list' && field.options && field.options.length > 0) {
       const opts = field.options.map((o, i) => `${i + 1}. ${o}`).join('\n');
-      return `${prompt}\n${opts}`;
+      const otherLine = field.allowOther ? `\n${field.options.length + 1}. Otro` : '';
+      return `${prompt}\n${opts}${otherLine}`;
     }
     if (field.type === 'boolean') {
       return `${prompt}\n1. Sí\n2. No`;
@@ -595,9 +596,17 @@ export class WhatsappService {
 
       if (currentField.type === 'list' && currentField.options && currentField.options.length > 0) {
         const optIdx = parseInt(body) - 1;
-        if (isNaN(optIdx) || optIdx < 0 || optIdx >= currentField.options.length) {
+        const totalOpts = currentField.allowOther ? currentField.options.length + 1 : currentField.options.length;
+        if (isNaN(optIdx) || optIdx < 0 || optIdx >= totalOpts) {
           const opts = currentField.options.map((o, i) => `${i + 1}. ${o}`).join('\n');
-          await send(`Opción no válida. Por favor selecciona:\n${opts}`);
+          const otherLine = currentField.allowOther ? `\n${currentField.options.length + 1}. Otro` : '';
+          await send(`Opción no válida. Por favor selecciona:\n${opts}${otherLine}`);
+          return;
+        }
+        if (currentField.allowOther && optIdx === currentField.options.length) {
+          const otherQuestion = currentField.otherLabel?.trim() || '¿Cuál es tu respuesta?';
+          await sessionRef.set({ state: 'WAITING_FIELD_OTHER_RESPONSE', fieldIndex, fieldValues }, { merge: true });
+          await send(otherQuestion);
           return;
         }
         value = currentField.options[optIdx];
@@ -616,6 +625,35 @@ export class WhatsappService {
       }
 
       setNestedValue(fieldValues, currentField.key, value);
+      const nextIndex = fieldIndex + 1;
+      if (nextIndex < fields.length) {
+        await sessionRef.set({ fieldIndex: nextIndex, fieldValues, state: 'WAITING_FIELD', tempFieldPhotos: [] }, { merge: true });
+        await send(this.buildFieldQuestion(fields[nextIndex]));
+      } else {
+        await this.createTicket(phone, sessionRef, fieldValues, send);
+      }
+
+    // ─── CAMPO LISTA: respuesta libre (opción Otro) ──────────────────────────
+    } else if (state === 'WAITING_FIELD_OTHER_RESPONSE') {
+      const allFields = await this.botConfig.getFields();
+      const fields = allFields.filter(f => f.source === 'bot');
+      const fieldIndex: number = typeof session.fieldIndex === 'number' ? session.fieldIndex : 0;
+      const fieldValues: Record<string, unknown> = session.fieldValues || {};
+      const currentField = fields[fieldIndex];
+
+      if (!currentField) {
+        await send('Error de configuración. Escribe cualquier mensaje para volver al menú.');
+        await sessionRef.set({ state: 'IDLE' }, { merge: true });
+        return;
+      }
+      if (!body) {
+        const otherQuestion = currentField.otherLabel?.trim() || '¿Cuál es tu respuesta?';
+        await send(otherQuestion);
+        return;
+      }
+
+      const otherValue = `OTRO: ${body.trim()}`;
+      setNestedValue(fieldValues, currentField.key, otherValue);
       const nextIndex = fieldIndex + 1;
       if (nextIndex < fields.length) {
         await sessionRef.set({ fieldIndex: nextIndex, fieldValues, state: 'WAITING_FIELD', tempFieldPhotos: [] }, { merge: true });
@@ -751,7 +789,7 @@ export class WhatsappService {
         const currentValue = (getNestedValue(ticketData.extraFields as Record<string, unknown> ?? {}, selectedField.key) as string) || 'Sin valor';
         const currentDisplay = currentValue === 'true' ? 'Sí' : currentValue === 'false' ? 'No' : currentValue;
         await send(`Valor actual: *${currentDisplay}*\n\n${this.buildFieldQuestion(selectedField)}`);
-        await sessionRef.set({ state: 'WAITING_EDIT_FIELD_VALUE', editFieldKey: selectedField.key, editFieldType: selectedField.type, editFieldOptions: selectedField.options || [], editFieldNormalize: selectedField.normalize }, { merge: true });
+        await sessionRef.set({ state: 'WAITING_EDIT_FIELD_VALUE', editFieldKey: selectedField.key, editFieldType: selectedField.type, editFieldOptions: selectedField.options || [], editFieldNormalize: selectedField.normalize, editFieldAllowOther: selectedField.allowOther || false, editFieldOtherLabel: selectedField.otherLabel || null }, { merge: true });
       }
 
     // ─── EDITAR CAMPO DE TEXTO ────────────────────────────────────────────────
@@ -766,12 +804,23 @@ export class WhatsappService {
       const editFieldOptions = (session.editFieldOptions as string[]) || [];
       const editFieldNormalize = session.editFieldNormalize as boolean | undefined;
 
+      const editFieldAllowOther = (session.editFieldAllowOther as boolean) || false;
+      const editFieldOtherLabel = (session.editFieldOtherLabel as string) || null;
+
       let newValue: string;
       if (editFieldType === 'list' && editFieldOptions.length > 0) {
         const optIdx = parseInt(body) - 1;
-        if (isNaN(optIdx) || optIdx < 0 || optIdx >= editFieldOptions.length) {
+        const totalOpts = editFieldAllowOther ? editFieldOptions.length + 1 : editFieldOptions.length;
+        if (isNaN(optIdx) || optIdx < 0 || optIdx >= totalOpts) {
           const opts = editFieldOptions.map((o, i) => `${i + 1}. ${o}`).join('\n');
-          await send(`Opción no válida:\n${opts}`);
+          const otherLine = editFieldAllowOther ? `\n${editFieldOptions.length + 1}. Otro` : '';
+          await send(`Opción no válida:\n${opts}${otherLine}`);
+          return;
+        }
+        if (editFieldAllowOther && optIdx === editFieldOptions.length) {
+          const otherQuestion = editFieldOtherLabel?.trim() || '¿Cuál es tu respuesta?';
+          await sessionRef.set({ state: 'WAITING_EDIT_OTHER_RESPONSE' }, { merge: true });
+          await send(otherQuestion);
           return;
         }
         newValue = editFieldOptions[optIdx];
@@ -805,7 +854,38 @@ export class WhatsappService {
         );
         await send(editMsg);
       }
-      await sessionRef.set({ state: 'IDLE', pendingTicketId: null, pendingTickets: null, pendingTicketData: null, editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null }, { merge: true });
+      await sessionRef.set({ state: 'IDLE', pendingTicketId: null, pendingTickets: null, pendingTicketData: null, editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null, editFieldAllowOther: null, editFieldOtherLabel: null }, { merge: true });
+
+    // ─── EDITAR CAMPO LISTA: respuesta libre (opción Otro) ───────────────────
+    } else if (state === 'WAITING_EDIT_OTHER_RESPONSE') {
+      const ticketId = session.pendingTicketId as string;
+      const editFieldKey = session.editFieldKey as string;
+      const editFieldOtherLabel = (session.editFieldOtherLabel as string) || null;
+
+      if (!body) {
+        const otherQuestion = editFieldOtherLabel?.trim() || '¿Cuál es tu respuesta?';
+        await send(otherQuestion);
+        return;
+      }
+
+      const otherValue = `OTRO: ${body.trim()}`;
+      if (ticketId) {
+        await db.collection('tickets').doc(ticketId).update({
+          [`extraFields.${editFieldKey}`]: otherValue,
+          'timestamps.updatedAt': Date.now(),
+        });
+        const msgsEdit = await this.botConfig.getMessages().catch(() => null);
+        const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
+        const extraVarsEdit = this.flattenExtraFieldsForInterpolation(
+          (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
+        );
+        const editMsg = interpolate(
+          msgsEdit?.ticketCreated ?? '✅ Ticket *{ticketNumber}* {action} exitosamente.\n\nTe notificaremos cuando haya actualizaciones de estados.',
+          { ticketNumber: ticketDataEdit?.ticketNumber ?? '', action: 'editado', ...extraVarsEdit },
+        );
+        await send(editMsg);
+      }
+      await sessionRef.set({ state: 'IDLE', pendingTicketId: null, pendingTickets: null, pendingTicketData: null, editableFields: null, editFieldKey: null, editFieldType: null, editFieldOptions: null, editFieldAllowOther: null, editFieldOtherLabel: null }, { merge: true });
 
     // ─── EDITAR FOTOS ─────────────────────────────────────────────────────────
     } else if (state === 'WAITING_EDIT_PHOTO_ACTION') {

@@ -39,6 +39,8 @@ export interface TicketField {
   source?: 'bot' | 'admin' | 'auto';
   required?: boolean;
   options?: string[];
+  allowOther?: boolean;
+  otherLabel?: string;
 }
 
 export interface SystemFieldConfig {
