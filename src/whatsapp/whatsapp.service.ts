@@ -740,7 +740,7 @@ export class WhatsappService {
           return;
         }
       } else {
-        newValue = editFieldNormalize ? body.trim().toUpperCase() : body.trim();
+        newValue = editFieldNormalize ? normalizeText(body) : body.trim();
       }
 
       if (ticketId) {
