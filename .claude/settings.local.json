@@ -14,7 +14,9 @@
       "Bash(npm run *)",
       "Bash(ls \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-backend\\\\dist\" 2>/dev/null | head -20; echo \"---\"; ls \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\" 2>/dev/null)",
       "Read(//c/Users/sebas/Documents/GitHub/**)",
-      "Bash(firebase functions:list)"
+      "Bash(firebase functions:list)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-frontend\" -Force)",
+      "Bash(npx tsc *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\sebas\\Documents\\GitHub\\motorola-backend"

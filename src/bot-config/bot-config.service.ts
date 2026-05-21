@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 
 export interface BotMessages {
@@ -23,8 +23,14 @@ export interface BotMessages {
   sessionExpiredGeneric: string;
 }
 
+export interface ComplianceLimits {
+  aTiempoMaxDias: number;
+  atencionPrioritariaMaxDias: number;
+}
+
 export interface BotSettings {
   sessionTimeoutHours: number;
+  compliance?: ComplianceLimits;
 }
 
 export interface TicketField {
@@ -169,6 +175,14 @@ export class BotConfigService {
   }
 
   async updateSettings(settings: Partial<BotSettings>): Promise<BotSettings> {
+    if (settings.compliance) {
+      const { aTiempoMaxDias, atencionPrioritariaMaxDias } = settings.compliance;
+      if (aTiempoMaxDias >= atencionPrioritariaMaxDias) {
+        throw new BadRequestException(
+          'El límite "A tiempo" debe ser menor al límite "Atención prioritaria".',
+        );
+      }
+    }
     await this.firebase.db.collection('bot_config').doc('settings').set(settings, { merge: true });
     return this.getSettings();
   }

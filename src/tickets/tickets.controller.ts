@@ -66,7 +66,7 @@ export class TicketsController {
   @Post(':id/transition')
   async transition(
     @Param('id') ticketId: string,
-    @Body() body: { newStatus: string; comments?: string },
+    @Body() body: { newStatus: string; comments?: string; scheduledDate?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const { success, message, prevStatus, ticketData } =
@@ -76,6 +76,7 @@ export class TicketsController {
         req.user.uid,
         req.user.role ?? 'user',
         body.comments,
+        body.scheduledDate,
       );
 
     await this.whatsappService

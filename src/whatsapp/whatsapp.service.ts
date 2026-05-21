@@ -31,6 +31,7 @@ interface PendingTicket {
   extraFields?: Record<string, string | string[]>;
   createdAt?: number;
   updatedAt?: number;
+  scheduledDate?: string;
 }
 
 const MENU_FALLBACK =
@@ -54,6 +55,13 @@ const EDIT_FLOW_STATES = [
   'WAITING_EDIT_NEW_PHOTO',
   'WAITING_ADMIN_REQUESTED_UPDATE',
 ];
+
+function formatScheduledDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString('es-CO');
+}
 
 function normalizeText(text: string): string {
   return text
@@ -260,6 +268,11 @@ export class WhatsappService {
           ? new Date(t.createdAt).toLocaleDateString('es-CO')
           : 'Sin fecha';
 
+        const scheduledStr =
+          (t.status === 'PROGRAMADO' || t.status === 'REPROGRAMADO')
+            ? formatScheduledDate(t.scheduledDate)
+            : null;
+
         if (template) {
           const extraVars = this.flattenExtraFieldsForInterpolation(
             (t.extraFields as Record<string, unknown>) || {},
@@ -269,6 +282,7 @@ export class WhatsappService {
             ticketNumber: t.ticketNumber,
             estado: t.status,
             fecha: dateStr,
+            fechaProgramada: scheduledStr ?? '',
             ...extraVars,
           };
           const rendered = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
@@ -280,6 +294,9 @@ export class WhatsappService {
           `   Estado: ${t.status}`,
           `   Fecha: ${dateStr}`,
         ];
+        if (scheduledStr) {
+          lines.push(`   📅 Programado para: ${scheduledStr}`);
+        }
         for (const field of textFields) {
           const value = getNestedValue((t.extraFields as Record<string, unknown>) || {}, field.key);
           if (value && typeof value === 'string') {
@@ -319,7 +336,6 @@ export class WhatsappService {
       .collection('tickets')
       .where('reporter.phone', '==', phone)
       .get();
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     return snap.docs
       .map((d) => {
         const data = d.data();
@@ -330,14 +346,12 @@ export class WhatsappService {
           extraFields: (data.extraFields as Record<string, string | string[]>) || {},
           createdAt: data.timestamps?.createdAt as number | undefined,
           updatedAt: data.timestamps?.updatedAt as number | undefined,
+          scheduledDate: data.scheduledDate as string | undefined,
         };
       })
       .filter((t) => {
         if (t.status === 'ARCHIVADO') return false;
-        if (t.status === 'FINALIZADO') {
-          const ref = t.updatedAt ?? t.createdAt ?? 0;
-          return ref >= thirtyDaysAgo;
-        }
+        if (t.status === 'FINALIZADO') return false;
         return true;
       });
   }
@@ -513,8 +527,7 @@ export class WhatsappService {
         }
 
       } else if (body === '3' || body === '4' ) {
-        const allTickets = await this.getTicketsByPhone(phone);
-        const tickets = allTickets.filter((t) => t.status !== 'FINALIZADO');
+        const tickets = await this.getTicketsByPhone(phone);
         if (tickets.length === 0) {
           const action = body === '3' ? 'editar' : 'eliminar';
           await send(msgs?.noTickets ?? `No tienes tickets disponibles para ${action}. ¿Puedo ayudarte en algo más?`);
@@ -688,6 +701,10 @@ export class WhatsappService {
         const allFields = await this.botConfig.getFields().catch(() => []);
 
         let info = `📋 *${ticket.ticketNumber}*\nEstado: ${ticket.status}\nFecha: ${dateStr}\n`;
+        const scheduledStrView = formatScheduledDate(ticket.scheduledDate);
+        if ((ticket.status === 'PROGRAMADO' || ticket.status === 'REPROGRAMADO') && scheduledStrView) {
+          info += `📅 Programado para: ${scheduledStrView}\n`;
+        }
         for (const field of allFields) {
           if (field.type === 'photo') continue;
           const value = getNestedValue(extraFields, field.key);

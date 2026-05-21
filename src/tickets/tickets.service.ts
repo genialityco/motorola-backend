@@ -4,32 +4,33 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
+import { BotConfigService } from '../bot-config/bot-config.service';
 import { FieldValue, DocumentData } from 'firebase-admin/firestore';
 
 type TicketStatus =
   | 'REPORTADO'
-  | 'REVISION'
-  | 'EN_REPARACION'
+  | 'EN_PROGRAMACION'
+  | 'PROGRAMADO'
+  | 'REPROGRAMADO'
   | 'REPARADO'
-  | 'ENTREGADO'
   | 'FINALIZADO'
   | 'ARCHIVADO';
 
 const VALID_STATUSES: TicketStatus[] = [
   'REPORTADO',
-  'REVISION',
-  'EN_REPARACION',
+  'EN_PROGRAMACION',
+  'PROGRAMADO',
+  'REPROGRAMADO',
   'REPARADO',
-  'ENTREGADO',
   'FINALIZADO',
 ];
 
 const ALL_VALID_STATUSES: TicketStatus[] = [
   'REPORTADO',
-  'REVISION',
-  'EN_REPARACION',
+  'EN_PROGRAMACION',
+  'PROGRAMADO',
+  'REPROGRAMADO',
   'REPARADO',
-  'ENTREGADO',
   'FINALIZADO',
   'ARCHIVADO',
 ];
@@ -97,7 +98,10 @@ function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
 export class TicketsService {
   private readonly storageBucket: string;
 
-  constructor(private readonly firebase: FirebaseService) {
+  constructor(
+    private readonly firebase: FirebaseService,
+    private readonly botConfig: BotConfigService,
+  ) {
     this.storageBucket = process.env.FIREBASE_STORAGE_BUCKET ?? '';
   }
 
@@ -107,9 +111,28 @@ export class TicketsService {
     uid: string,
     role: string,
     comments?: string,
+    scheduledDate?: string,
   ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
     if (!VALID_STATUSES.includes(newStatus)) {
       throw new BadRequestException(`Estado inválido: ${newStatus}`);
+    }
+
+    if ((newStatus === 'PROGRAMADO' || newStatus === 'REPROGRAMADO') && !scheduledDate) {
+      throw new BadRequestException(
+        `Se requiere una fecha programada para cambiar al estado ${newStatus}.`,
+      );
+    }
+
+    if (scheduledDate && isNaN(new Date(scheduledDate).getTime())) {
+      throw new BadRequestException('La fecha programada no tiene un formato válido.');
+    }
+
+    let adminPhotoFieldKeys: string[] = [];
+    if (newStatus === 'REPARADO') {
+      const allFields = await this.botConfig.getFields();
+      adminPhotoFieldKeys = allFields
+        .filter((f) => f.type === 'photo' && f.source === 'admin')
+        .map((f) => f.key);
     }
 
     const db = this.firebase.db;
@@ -124,18 +147,43 @@ export class TicketsService {
       prevStatus = snap.data()?.status ?? '';
       ticketData = snap.data()!;
 
-      tx.update(ticketRef, {
+      if (newStatus === 'REPARADO' && adminPhotoFieldKeys.length > 0) {
+        const extraFields = (ticketData.extraFields as Record<string, unknown>) || {};
+        const hasRepairPhoto = adminPhotoFieldKeys.some((key) => {
+          const val = getNestedValue(extraFields, key);
+          return Array.isArray(val) && (val as string[]).length > 0;
+        });
+        if (!hasRepairPhoto) {
+          throw new BadRequestException(
+            'Se requiere al menos una foto de reparación para cambiar al estado REPARADO.',
+          );
+        }
+      }
+
+      const updateData: Record<string, unknown> = {
         status: newStatus,
         'timestamps.updatedAt': Date.now(),
-      });
+      };
 
-      tx.set(ticketRef.collection('statusHistory').doc(), {
+      if (scheduledDate && (newStatus === 'PROGRAMADO' || newStatus === 'REPROGRAMADO')) {
+        updateData.scheduledDate = scheduledDate;
+      }
+
+      tx.update(ticketRef, updateData);
+
+      const historyEntry: Record<string, unknown> = {
         previousStatus: prevStatus,
         newStatus,
         changedBy: { uid, role },
         comments: comments || '',
         timestamp: Date.now(),
-      });
+      };
+
+      if (scheduledDate && (newStatus === 'PROGRAMADO' || newStatus === 'REPROGRAMADO')) {
+        historyEntry.scheduledDate = scheduledDate;
+      }
+
+      tx.set(ticketRef.collection('statusHistory').doc(), historyEntry);
     });
 
     return { success: true, message: 'Ticket actualizado correctamente.', prevStatus, ticketData };
