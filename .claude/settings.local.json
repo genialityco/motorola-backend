@@ -16,7 +16,11 @@
       "Read(//c/Users/sebas/Documents/GitHub/**)",
       "Bash(firebase functions:list)",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-frontend\" -Force)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-backend\" -Recurse -Depth 2 -Directory)",
+      "Bash(findstr notifications *)",
+      "Bash(echo \"===EXIT=== $?\")",
+      "Read(//tmp/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\sebas\\Documents\\GitHub\\motorola-backend"

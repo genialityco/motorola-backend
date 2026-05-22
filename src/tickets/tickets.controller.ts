@@ -16,6 +16,8 @@ import * as XLSX from 'xlsx';
 import { TicketsService } from './tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { BotConfigService, interpolate } from '../bot-config/bot-config.service';
 
 type MulterFile = {
@@ -28,7 +30,7 @@ type AuthenticatedRequest = {
 };
 
 @Controller('tickets')
-@UseGuards(FirebaseAuthGuard)
+@UseGuards(FirebaseAuthGuard, RolesGuard)
 export class TicketsController {
   constructor(
     private readonly ticketsService: TicketsService,
@@ -37,6 +39,7 @@ export class TicketsController {
   ) {}
 
   @Post('import')
+  @Roles('admin')
   @UseInterceptors(FileInterceptor('file'))
   async importTickets(@UploadedFile() file: MulterFile) {
     if (!file) throw new BadRequestException('No se adjuntó archivo Excel.');
@@ -86,7 +89,23 @@ export class TicketsController {
     return { success, message };
   }
 
+  @Post(':id/observations')
+  @Roles('admin', 'gestor')
+  addObservation(
+    @Param('id') ticketId: string,
+    @Body() body: { text: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.ticketsService.addObservation(
+      ticketId,
+      req.user.uid,
+      req.user.role ?? 'user',
+      body.text ?? '',
+    );
+  }
+
   @Delete(':id/photos/:fieldKey/:index')
+  @Roles('admin')
   async deletePhoto(
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
@@ -113,6 +132,7 @@ export class TicketsController {
   }
 
   @Post(':id/photos/:fieldKey')
+  @Roles('admin', 'gestor')
   @UseInterceptors(FileInterceptor('file'))
   async uploadPhoto(
     @Param('id') ticketId: string,
@@ -133,6 +153,7 @@ export class TicketsController {
   }
 
   @Patch(':id/extra/:fieldKey')
+  @Roles('admin')
   updateExtraField(
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
