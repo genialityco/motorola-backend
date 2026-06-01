@@ -41,7 +41,7 @@ export interface TicketField {
   order: number;
   normalize: boolean;
   visible?: boolean;
-  type?: 'string' | 'numeric' | 'date' | 'photo' | 'video' | 'boolean' | 'list';
+  type?: 'string' | 'numeric' | 'date' | 'fecha' | 'photo' | 'video' | 'boolean' | 'list';
   source?: 'bot' | 'admin' | 'auto';
   required?: boolean;
   options?: string[];
@@ -134,16 +134,11 @@ export class BotConfigService {
 
     const snap = await this.firebase.db.collection(COLLECTIONS.BOT_CONFIG).doc('ticket_fields').get();
     const fields = snap.exists ? (snap.data()?.fields as TicketField[] | undefined) : undefined;
-    
-    if (fields && fields.length > 0) {
-      // Merge con defaults para asegurar que nuevos campos se incluyan
-      const savedKeys = new Set(fields.map(f => f.key));
-      const newDefaults = DEFAULT_FIELDS.filter(df => !savedKeys.has(df.key));
-      this.fieldsCache = [...fields, ...newDefaults].sort((a, b) => a.order - b.order);
-    } else {
-      this.fieldsCache = DEFAULT_FIELDS;
-    }
-    
+
+    this.fieldsCache = fields && fields.length > 0
+      ? [...fields].sort((a, b) => a.order - b.order)
+      : DEFAULT_FIELDS;
+
     this.cacheExpiry = Date.now() + 60_000;
     return this.fieldsCache;
   }

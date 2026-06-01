@@ -5,6 +5,7 @@ import { COLLECTIONS, FirebaseService } from '../../../firebase/firebase.service
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
 import { WhatsappTicketsUtilService } from '../whatsapp-tickets-util.service';
 import { getNestedValue, setNestedValue, normalizeText } from './helpers';
+import { FECHA_FORMAT_LABEL, isValidFecha } from '../../../tickets/_internal/utils';
 
 interface PendingTicket {
   id: string;
@@ -178,6 +179,13 @@ export class WhatsappEditFlowService {
         await send('Por favor responde *Sí* (1) o *No* (2).');
         return;
       }
+    } else if (editFieldType === 'fecha') {
+      const trimmed = body.trim();
+      if (!isValidFecha(trimmed)) {
+        await send(`Formato inválido. Usa ${FECHA_FORMAT_LABEL} (ejemplo: 25/12/2026, 14:30).`);
+        return;
+      }
+      newValue = trimmed;
     } else {
       newValue = editFieldNormalize ? normalizeText(body) : body.trim();
     }

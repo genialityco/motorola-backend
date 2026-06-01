@@ -28,6 +28,9 @@ export class WhatsappFormattingService {
     if (field.type === 'photo') {
       return `${prompt}\nEnvía las fotos y escribe *listo* cuando hayas terminado.`;
     }
+    if (field.type === 'fecha') {
+      return `${prompt}\nFormato: DD/MM/AAAA, HH:mm (ejemplo: 25/12/2026, 14:30)`;
+    }
     return prompt;
   }
 

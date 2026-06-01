@@ -42,6 +42,28 @@ export function isValidPhone(normalized: string): boolean {
   return normalized.length >= 7 && /^\d+$/.test(normalized);
 }
 
+export const FECHA_FORMAT_LABEL = 'DD/MM/AAAA, HH:mm';
+const FECHA_REGEX = /^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2})$/;
+
+export function isValidFecha(raw: string): boolean {
+  const m = raw.match(FECHA_REGEX);
+  if (!m) return false;
+  const [, dd, mm, yyyy, hh, mi] = m;
+  const d = Number(dd), mo = Number(mm), y = Number(yyyy);
+  const h = Number(hh), min = Number(mi);
+  if (mo < 1 || mo > 12) return false;
+  if (h > 23 || min > 59) return false;
+  const dt = new Date(y, mo - 1, d, h, min);
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+}
+
+export function formatFecha(input: string | Date): string {
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function setNestedField(
   obj: Record<string, unknown>,
   path: string,

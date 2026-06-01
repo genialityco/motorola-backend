@@ -2,9 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { UsersService } from '../../users/users.service';
 import {
-  ALL_VALID_STATUSES, BotFieldForImport, FailedTicketRow,
+  ALL_VALID_STATUSES, BotFieldForImport, FailedTicketRow, FECHA_FORMAT_LABEL,
   ImportedTicketResult, ImportResult, INITIAL_STATUS, TicketStatus,
-  isValidPhone, normalizePhone, setNestedField,
+  isValidFecha, isValidPhone, normalizePhone, setNestedField,
 } from './utils';
 
 @Injectable()
@@ -113,6 +113,10 @@ export class TicketsImportService {
         errors.push(`"${colLabel}" debe ser numérico, se recibió: "${rawValue}"`);
         continue;
       }
+      if (field.type === 'fecha' && !isValidFecha(rawValue)) {
+        errors.push(`"${colLabel}" debe tener formato ${FECHA_FORMAT_LABEL}, se recibió: "${rawValue}"`);
+        continue;
+      }
       if (
         field.type === 'list' && field.options && field.options.length > 0 &&
         !field.options.includes(rawValue)
@@ -120,7 +124,9 @@ export class TicketsImportService {
         errors.push(`"${colLabel}" debe ser una de: ${field.options.join(', ')}. Se recibió: "${rawValue}"`);
         continue;
       }
-      const finalValue = field.normalize ? rawValue.toUpperCase() : rawValue;
+      const finalValue = field.type === 'fecha'
+        ? rawValue
+        : (field.normalize ? rawValue.toUpperCase() : rawValue);
       setNestedField(extraFields, field.key, finalValue);
     }
     return errors;

@@ -3,6 +3,7 @@ import { BotConfigService, TicketField, interpolate } from '../../bot-config/bot
 import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { WhatsappFormattingService } from './whatsapp-formatting.service';
 import { normalizeText } from './flows/helpers';
+import { FECHA_FORMAT_LABEL, isValidFecha } from '../../tickets/_internal/utils';
 
 @Injectable()
 export class WhatsappFieldUpdateService {
@@ -57,6 +58,15 @@ export class WhatsappFieldUpdateService {
         await send('Por favor responde *Sí* (1) o *No* (2).');
         return {};
       }
+    }
+
+    if (fieldType === 'fecha') {
+      const trimmed = body.trim();
+      if (!isValidFecha(trimmed)) {
+        await send(`Formato inválido. Usa ${FECHA_FORMAT_LABEL} (ejemplo: 25/12/2026, 14:30).`);
+        return {};
+      }
+      return { newValue: trimmed };
     }
 
     const newValue = fieldNormalize ? normalizeText(body) : body.trim();

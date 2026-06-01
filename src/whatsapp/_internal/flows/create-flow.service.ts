@@ -6,6 +6,7 @@ import { WhatsappSessionService } from '../whatsapp-session.service';
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
 import { WhatsappTicketCreationService } from '../whatsapp-ticket-creation.service';
 import { setNestedValue, normalizeText } from './helpers';
+import { FECHA_FORMAT_LABEL, isValidFecha } from '../../../tickets/_internal/utils';
 
 interface FieldValues {
   [key: string]: unknown;
@@ -213,6 +214,13 @@ export class WhatsappCreateFlowService {
         await send('Por favor responde *Sí* (1) o *No* (2).');
         return;
       }
+    } else if (currentField.type === 'fecha') {
+      const trimmed = body.trim();
+      if (!isValidFecha(trimmed)) {
+        await send(`Formato inválido. Usa ${FECHA_FORMAT_LABEL} (ejemplo: 25/12/2026, 14:30).`);
+        return;
+      }
+      value = trimmed;
     } else {
       value = currentField.normalize !== false ? normalizeText(body) : body.trim();
     }
