@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
 import { BotConfigService, TicketField, interpolate } from '../../../bot-config/bot-config.service';
-import { FirebaseService } from '../../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../../firebase/firebase.service';
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
 import { WhatsappTicketsUtilService } from '../whatsapp-tickets-util.service';
 import { getNestedValue, setNestedValue, normalizeText } from './helpers';
@@ -184,7 +184,7 @@ export class WhatsappEditFlowService {
 
     const db = this.firebase.db;
     if (ticketId) {
-      await db.collection('tickets').doc(ticketId).update({
+      await db.collection(COLLECTIONS.TICKETS).doc(ticketId).update({
         [`extraFields.${editFieldKey}`]: newValue,
         'timestamps.updatedAt': Date.now(),
       });
@@ -226,7 +226,7 @@ export class WhatsappEditFlowService {
 
     const db = this.firebase.db;
     if (ticketId) {
-      await db.collection('tickets').doc(ticketId).update({
+      await db.collection(COLLECTIONS.TICKETS).doc(ticketId).update({
         [`extraFields.${editFieldKey}`]: otherValue,
         'timestamps.updatedAt': Date.now(),
       });

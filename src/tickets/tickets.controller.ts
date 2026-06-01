@@ -19,6 +19,7 @@ import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { BotConfigService, interpolate } from '../bot-config/bot-config.service';
+import { PHOTO_TRIGGERED_STATUS } from './_internal/utils';
 
 type MulterFile = {
   buffer: Buffer;
@@ -69,7 +70,7 @@ export class TicketsController {
   @Post(':id/transition')
   async transition(
     @Param('id') ticketId: string,
-    @Body() body: { newStatus: string; comments?: string; scheduledDate?: string },
+    @Body() body: { newStatus: string; comments?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const { success, message, prevStatus, ticketData } =
@@ -79,7 +80,6 @@ export class TicketsController {
         req.user.uid,
         req.user.role ?? 'user',
         body.comments,
-        body.scheduledDate,
       );
 
     await this.whatsappService
@@ -138,6 +138,7 @@ export class TicketsController {
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
     @UploadedFile() file: MulterFile,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('No se adjuntó ningún archivo.');
 
@@ -147,9 +148,21 @@ export class TicketsController {
       `ticket_photos/${ticketId}/${fieldKey}`,
     );
 
-    await this.ticketsService.addPhotoToField(ticketId, fieldKey, photoUrl);
+    const result = await this.ticketsService.addPhotoToField(
+      ticketId,
+      fieldKey,
+      photoUrl,
+      req.user.uid,
+      req.user.role ?? 'user',
+    );
 
-    return { success: true, photoUrl };
+    if (result.autoTransitioned && result.ticketData && result.prevStatus) {
+      await this.whatsappService
+        .notifyStatusChange(result.prevStatus, PHOTO_TRIGGERED_STATUS, result.ticketData)
+        .catch((err) => console.error('Error notificando auto-transición:', err));
+    }
+
+    return { success: true, photoUrl, autoTransitioned: result.autoTransitioned };
   }
 
   @Patch(':id/extra/:fieldKey')

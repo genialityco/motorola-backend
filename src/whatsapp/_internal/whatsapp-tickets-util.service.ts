@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 
 interface PendingTicket {
   id: string;
@@ -8,7 +8,6 @@ interface PendingTicket {
   extraFields?: Record<string, string | string[]>;
   createdAt?: number;
   updatedAt?: number;
-  scheduledDate?: string;
 }
 
 @Injectable()
@@ -17,7 +16,7 @@ export class WhatsappTicketsUtilService {
 
   async getTicketsByPhone(phone: string): Promise<PendingTicket[]> {
     const snap = await this.firebase.db
-      .collection('tickets')
+      .collection(COLLECTIONS.TICKETS)
       .where('reporter.phone', '==', phone)
       .get();
     return snap.docs
@@ -30,7 +29,6 @@ export class WhatsappTicketsUtilService {
           extraFields: (data.extraFields as Record<string, string | string[]>) || {},
           createdAt: data.timestamps?.createdAt as number | undefined,
           updatedAt: data.timestamps?.updatedAt as number | undefined,
-          scheduledDate: data.scheduledDate as string | undefined,
         };
       })
       .filter((t) => {

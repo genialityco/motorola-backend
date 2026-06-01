@@ -3,12 +3,13 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../firebase/firebase.service';
 import { FieldValue, DocumentData } from 'firebase-admin/firestore';
 import { TicketsStatusService } from './_internal/tickets-status.service';
 import { TicketsImportService } from './_internal/tickets-import.service';
 import {
   BotFieldForImport, ImportResult, TicketStatus, getNestedValue,
+  INITIAL_STATUS, PHOTO_TRIGGERED_STATUS,
 } from './_internal/utils';
 
 export type {
@@ -33,9 +34,8 @@ export class TicketsService {
     uid: string,
     role: string,
     comments?: string,
-    scheduledDate?: string,
   ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
-    return this.statusService.transitionStatus(ticketId, newStatus, uid, role, comments, scheduledDate);
+    return this.statusService.transitionStatus(ticketId, newStatus, uid, role, comments);
   }
 
   getConfigFields(): Promise<BotFieldForImport[]> {
@@ -51,7 +51,7 @@ export class TicketsService {
     fieldKey: string,
     photoIndex: number,
   ): Promise<{ ticketNumber: string; reporterPhone: string }> {
-    const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
+    const ticketRef = this.firebase.db.collection(COLLECTIONS.TICKETS).doc(ticketId);
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
@@ -74,18 +74,38 @@ export class TicketsService {
     };
   }
 
-  async addPhotoToField(ticketId: string, fieldKey: string, photoUrl: string): Promise<void> {
-    const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
+  async addPhotoToField(
+    ticketId: string,
+    fieldKey: string,
+    photoUrl: string,
+    uid: string,
+    role: string,
+  ): Promise<{ autoTransitioned: boolean; prevStatus?: string; ticketData?: DocumentData }> {
+    const ticketRef = this.firebase.db.collection(COLLECTIONS.TICKETS).doc(ticketId);
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
+
     await ticketRef.update({
       [`extraFields.${fieldKey}`]: FieldValue.arrayUnion(photoUrl),
       'timestamps.updatedAt': Date.now(),
     });
+
+    const currentStatus = snap.data()?.status as TicketStatus | undefined;
+    if (currentStatus === INITIAL_STATUS) {
+      const result = await this.statusService.transitionStatus(
+        ticketId,
+        PHOTO_TRIGGERED_STATUS,
+        uid,
+        role,
+        'Auto: foto adjuntada por administración',
+      );
+      return { autoTransitioned: true, prevStatus: result.prevStatus, ticketData: result.ticketData };
+    }
+    return { autoTransitioned: false };
   }
 
   async updateExtraField(ticketId: string, fieldKey: string, value: string): Promise<void> {
-    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const ref = this.firebase.db.collection(COLLECTIONS.TICKETS).doc(ticketId);
     const snap = await ref.get();
     if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado`);
     await ref.update({
@@ -96,7 +116,7 @@ export class TicketsService {
 
   async addObservation(ticketId: string, uid: string, role: string, text: string): Promise<void> {
     if (!text?.trim()) throw new BadRequestException('La observación no puede estar vacía.');
-    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const ref = this.firebase.db.collection(COLLECTIONS.TICKETS).doc(ticketId);
     const snap = await ref.get();
     if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado.`);
     await ref.update({

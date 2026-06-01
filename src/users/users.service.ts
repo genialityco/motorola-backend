@@ -3,7 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../firebase/firebase.service';
 import { GestorAssignmentsService } from './_internal/gestor-assignments.service';
 import { AssignmentRule } from './_internal/utils';
 
@@ -58,25 +58,25 @@ export class UsersService {
       assignmentRules, active: true, createdAt: Date.now(),
     };
 
-    await this.firebase.db.collection('gestor').doc(uid).set(gestor);
+    await this.firebase.db.collection(COLLECTIONS.GESTORS).doc(uid).set(gestor);
     await this.assignments.syncGestorAssignments(uid, assignmentRules);
 
     return gestor;
   }
 
   async listUsers(): Promise<GestorUser[]> {
-    const snap = await this.firebase.db.collection('gestor').get();
+    const snap = await this.firebase.db.collection(COLLECTIONS.GESTORS).get();
     return snap.docs.map((d) => d.data() as GestorUser);
   }
 
   async getUser(uid: string): Promise<GestorUser> {
-    const snap = await this.firebase.db.collection('gestor').doc(uid).get();
+    const snap = await this.firebase.db.collection(COLLECTIONS.GESTORS).doc(uid).get();
     if (!snap.exists) throw new NotFoundException(`Usuario ${uid} no encontrado.`);
     return snap.data() as GestorUser;
   }
 
   async updateUser(uid: string, dto: UpdateGestorDto): Promise<void> {
-    const ref = this.firebase.db.collection('gestor').doc(uid);
+    const ref = this.firebase.db.collection(COLLECTIONS.GESTORS).doc(uid);
     const snap = await ref.get();
     if (!snap.exists) throw new NotFoundException(`Usuario ${uid} no encontrado.`);
 
@@ -96,7 +96,7 @@ export class UsersService {
 
   async deleteUser(uid: string): Promise<void> {
     await this.firebase.auth.deleteUser(uid).catch(() => null);
-    await this.firebase.db.collection('gestor').doc(uid).delete();
+    await this.firebase.db.collection(COLLECTIONS.GESTORS).doc(uid).delete();
   }
 
   async promoteToAdmin(uid: string, setupKey: string): Promise<void> {

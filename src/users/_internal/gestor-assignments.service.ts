@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { AssignmentRule, rulesMatch } from './utils';
 
 interface GestorLite {
@@ -14,7 +14,7 @@ export class GestorAssignmentsService {
 
   async getActiveGestors(): Promise<GestorLite[]> {
     const snap = await this.firebase.db
-      .collection('gestor')
+      .collection(COLLECTIONS.GESTORS)
       .where('role', '==', 'gestor')
       .where('active', '==', true)
       .get();
@@ -29,7 +29,7 @@ export class GestorAssignmentsService {
   }
 
   async syncGestorAssignments(uid: string, rules: AssignmentRule[]): Promise<void> {
-    const ticketSnap = await this.firebase.db.collection('tickets').get();
+    const ticketSnap = await this.firebase.db.collection(COLLECTIONS.TICKETS).get();
     if (ticketSnap.empty) return;
 
     const batch = this.firebase.db.batch();
@@ -53,7 +53,7 @@ export class GestorAssignmentsService {
 
   async recomputeAllTicketAssignments(): Promise<{ updated: number }> {
     const [ticketSnap, gestors] = await Promise.all([
-      this.firebase.db.collection('tickets').get(),
+      this.firebase.db.collection(COLLECTIONS.TICKETS).get(),
       this.getActiveGestors(),
     ]);
 

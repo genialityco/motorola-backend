@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { BotConfigService, interpolate } from '../bot-config/bot-config.service';
-import { FirebaseService } from '../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../firebase/firebase.service';
 import { WhatsappFlowOrchestratorService } from './_internal/whatsapp-flow-orchestrator.service';
 import { WhatsappSessionService } from './_internal/whatsapp-session.service';
 import { WhatsappFormattingService } from './_internal/whatsapp-formatting.service';
@@ -44,8 +44,8 @@ export class WhatsappService {
     const phone = rawPhone ? this.media.normalizePhoneForWhatsApp(rawPhone) : '';
     if (!phone) return;
 
-    if (newStatus === 'REPARADO') {
-      await this.notifyRepaired(phone, ticketData);
+    if (newStatus === 'APROBACION_PIEZAS') {
+      await this.notifyApprovalPhotos(phone, ticketData);
     } else {
       await this.notifyStatusChanged(phone, ticketData, prevStatus, newStatus);
     }
@@ -61,7 +61,7 @@ export class WhatsappService {
     customMessage?: string,
   ): Promise<void> {
     const db = this.firebase.db;
-    const ticketSnap = await db.collection('tickets').doc(ticketId).get();
+    const ticketSnap = await db.collection(COLLECTIONS.TICKETS).doc(ticketId).get();
     if (!ticketSnap.exists) throw new Error('Ticket no encontrado');
 
     const ticket = ticketSnap.data()!;
@@ -88,7 +88,7 @@ export class WhatsappService {
       msg += `\n\n_${customMessage.trim()}_`;
     }
 
-    const sessionRef = db.collection('whatsapp_sessions').doc(phone);
+    const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(phone);
     await sessionRef.set(
       {
         state: 'WAITING_ADMIN_REQUESTED_UPDATE',
@@ -169,35 +169,35 @@ export class WhatsappService {
   }
 
   /**
-   * Notifica al usuario que su ticket fue reparado
+   * Notifica al usuario las piezas propuestas para su aprobación
    */
-  private async notifyRepaired(phone: string, ticketData: Record<string, unknown>): Promise<void> {
+  private async notifyApprovalPhotos(phone: string, ticketData: Record<string, unknown>): Promise<void> {
     const allFields = await this.botConfig.getFields().catch(() => []);
     const adminPhotoFields = allFields.filter(f => f.type === 'photo' && f.source === 'admin');
     const extraFields = (ticketData.extraFields as Record<string, string | string[]>) || {};
 
-    const repairPhotos: string[] = [];
+    const approvalPhotos: string[] = [];
     for (const field of adminPhotoFields) {
       const urls = getNestedValue(extraFields, field.key);
-      if (Array.isArray(urls)) repairPhotos.push(...urls);
+      if (Array.isArray(urls)) approvalPhotos.push(...urls);
     }
 
     const msgs = await this.botConfig.getMessages().catch(() => null);
     const extraVars = this.formatting.flattenExtraFieldsForInterpolation(extraFields);
     const msg = interpolate(
-      msgs?.reparadoMessage ??
-        'Estas son las evidencias de que su ticket *{ticketNumber}* ha sido reparado:',
+      msgs?.aprobacionPiezasMessage ??
+        'Estas son las piezas propuestas para la aprobación de tu solicitud *{ticketNumber}*:',
       { ticketNumber: String(ticketData.ticketNumber), ...extraVars },
     );
 
     await this.session.saveMessage(phone, 'bot', msg).catch(err => {
-      this.logger.error('Error guardando notificación REPARADO:', err);
+      this.logger.error('Error guardando notificación APROBACION_PIEZAS:', err);
     });
     await this.session.reply(phone, msg).catch(err => {
-      this.logger.error('Error enviando notificación REPARADO:', err);
+      this.logger.error('Error enviando notificación APROBACION_PIEZAS:', err);
     });
 
-    for (const photoUrl of repairPhotos) {
+    for (const photoUrl of approvalPhotos) {
       await this.session.saveMessage(phone, 'bot', '[imagen]', photoUrl).catch(() => null);
       await this.session.reply(phone, '[imagen]', undefined, photoUrl).catch(() => null);
     }

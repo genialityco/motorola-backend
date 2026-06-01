@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { FieldValue } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 
 @Injectable()
 export class WhatsappApiClient {
@@ -31,20 +31,20 @@ export class WhatsappApiClient {
     text: string,
     photoUrl?: string,
   ) {
-    const ref = this.firebase.db.collection('whatsapp_sessions').doc(phone);
+    const ref = this.firebase.db.collection(COLLECTIONS.SESSIONS).doc(phone);
     const entry: Record<string, unknown> = { from, text, timestamp: Date.now() };
     if (photoUrl) entry.photoUrl = photoUrl;
     await ref.set({ messages: FieldValue.arrayUnion(entry) }, { merge: true });
   }
 
   async getChatHistory(phone: string) {
-    const ref = this.firebase.db.collection('whatsapp_sessions').doc(phone);
+    const ref = this.firebase.db.collection(COLLECTIONS.SESSIONS).doc(phone);
     const snap = await ref.get();
     return snap.data()?.messages || [];
   }
 
   async toggleBotForSession(phone: string, botEnabled: boolean) {
-    const ref = this.firebase.db.collection('whatsapp_sessions').doc(phone);
+    const ref = this.firebase.db.collection(COLLECTIONS.SESSIONS).doc(phone);
     await ref.set({ botEnabled }, { merge: true });
     this.logger.log(`[${phone}] Bot ${botEnabled ? 'habilitado' : 'deshabilitado'}`);
   }

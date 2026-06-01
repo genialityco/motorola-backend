@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
 import { BotConfigService, interpolate } from '../../../bot-config/bot-config.service';
-import { FirebaseService } from '../../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../../firebase/firebase.service';
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
 import { WhatsappTicketsUtilService } from '../whatsapp-tickets-util.service';
 
@@ -67,7 +67,7 @@ export class WhatsappDeleteFlowService {
     const deletedTicket = tickets[idx];
     const db = this.firebase.db;
 
-    await db.collection('tickets').doc(deletedTicket.id).update({
+    await db.collection(COLLECTIONS.TICKETS).doc(deletedTicket.id).update({
       status: 'ARCHIVADO',
       'timestamps.updatedAt': Date.now(),
     });

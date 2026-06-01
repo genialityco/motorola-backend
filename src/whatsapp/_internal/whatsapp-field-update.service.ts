@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { BotConfigService, TicketField, interpolate } from '../../bot-config/bot-config.service';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { WhatsappFormattingService } from './whatsapp-formatting.service';
 import { normalizeText } from './flows/helpers';
 
@@ -71,7 +71,7 @@ export class WhatsappFieldUpdateService {
     send: (msg: string) => Promise<void>,
   ): Promise<void> {
     const db = this.firebase.db;
-    await db.collection('tickets').doc(ticketId).update({
+    await db.collection(COLLECTIONS.TICKETS).doc(ticketId).update({
       [`extraFields.${fieldKey}`]: newValue,
       'timestamps.updatedAt': Date.now(),
     });

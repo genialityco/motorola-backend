@@ -1,12 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../firebase/firebase.service';
 
 export interface BotMessages {
   menu: string;
   ticketCreated: string;
   ticketDeleted: string;
   statusChanged: string;
-  reparadoMessage: string;
+  aprobacionPiezasMessage: string;
   noTickets: string;
   invalidField: string;
   cancelled: string;
@@ -67,8 +67,8 @@ export const DEFAULT_MESSAGES: BotMessages = {
   ticketDeleted: '✅ Ticket *{ticketNumber}* eliminado correctamente.',
   statusChanged:
     'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
-  reparadoMessage:
-    'Estas son las evidencias de que su ticket *{ticketNumber}* con descripción "{description}" ha sido reparado:',
+  aprobacionPiezasMessage:
+    'Estas son las piezas propuestas para la aprobación de tu solicitud *{ticketNumber}*:',
   noTickets: 'No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?',
   invalidField: 'Por favor ingresa una respuesta válida.',
   cancelled: 'Operación cancelada.',
@@ -122,7 +122,7 @@ export class BotConfigService {
   async getMessages(): Promise<BotMessages> {
     if (this.messagesCache && this.isCacheValid()) return this.messagesCache;
 
-    const snap = await this.firebase.db.collection('bot_config').doc('messages').get();
+    const snap = await this.firebase.db.collection(COLLECTIONS.BOT_CONFIG).doc('messages').get();
     const data = snap.exists ? (snap.data() as Partial<BotMessages>) : {};
     this.messagesCache = { ...DEFAULT_MESSAGES, ...data };
     this.cacheExpiry = Date.now() + 60_000;
@@ -132,7 +132,7 @@ export class BotConfigService {
   async getFields(): Promise<TicketField[]> {
     if (this.fieldsCache && this.isCacheValid()) return this.fieldsCache;
 
-    const snap = await this.firebase.db.collection('bot_config').doc('ticket_fields').get();
+    const snap = await this.firebase.db.collection(COLLECTIONS.BOT_CONFIG).doc('ticket_fields').get();
     const fields = snap.exists ? (snap.data()?.fields as TicketField[] | undefined) : undefined;
     
     if (fields && fields.length > 0) {
@@ -150,7 +150,7 @@ export class BotConfigService {
 
   async updateMessages(messages: Partial<BotMessages>): Promise<BotMessages> {
     await this.firebase.db
-      .collection('bot_config')
+      .collection(COLLECTIONS.BOT_CONFIG)
       .doc('messages')
       .set(messages, { merge: true });
     this.invalidateCache();
@@ -162,14 +162,14 @@ export class BotConfigService {
     const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: normalized };
     if (systemFields) data.systemFields = systemFields;
     await this.firebase.db
-      .collection('bot_config')
+      .collection(COLLECTIONS.BOT_CONFIG)
       .doc('ticket_fields')
       .set(data);
     this.invalidateCache();
   }
 
   async getSettings(): Promise<BotSettings> {
-    const snap = await this.firebase.db.collection('bot_config').doc('settings').get();
+    const snap = await this.firebase.db.collection(COLLECTIONS.BOT_CONFIG).doc('settings').get();
     const data = snap.exists ? (snap.data() as Partial<BotSettings>) : {};
     return { ...DEFAULT_SETTINGS, ...data };
   }
@@ -183,7 +183,7 @@ export class BotConfigService {
         );
       }
     }
-    await this.firebase.db.collection('bot_config').doc('settings').set(settings, { merge: true });
+    await this.firebase.db.collection(COLLECTIONS.BOT_CONFIG).doc('settings').set(settings, { merge: true });
     return this.getSettings();
   }
 

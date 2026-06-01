@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
 import { BotConfigService, interpolate } from '../../bot-config/bot-config.service';
 import { UsersService } from '../../users/users.service';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
+import { INITIAL_STATUS } from '../../tickets/_internal/utils';
 import { WhatsappSessionService } from './whatsapp-session.service';
 import { WhatsappFormattingService } from './whatsapp-formatting.service';
 
@@ -30,7 +31,7 @@ export class WhatsappTicketCreationService {
 
     const ticketData: Record<string, unknown> = {
       ticketNumber: `TKT-${Math.floor(Math.random() * 90000) + 10000}`,
-      status: 'REPORTADO',
+      status: INITIAL_STATUS,
       reporter: { phone, name: 'Usuario WhatsApp' },
       timestamps: { createdAt: Date.now(), updatedAt: Date.now() },
       extraFields: fieldValues,
@@ -40,12 +41,12 @@ export class WhatsappTicketCreationService {
       .computeAssignedGestorIds(fieldValues as Record<string, unknown>)
       .catch(() => []);
 
-    const docRef = await db.collection('tickets').add({
+    const docRef = await db.collection(COLLECTIONS.TICKETS).add({
       ...ticketData,
       assignedGestorIds,
     });
 
-    const hostRef = db.collection('hosts').doc(phone);
+    const hostRef = db.collection(COLLECTIONS.HOSTS).doc(phone);
     const hostSnap = await hostRef.get();
     if (!hostSnap.exists) {
       await hostRef.set({ nombre: phone, telefono: phone, creadoEn: Date.now() });

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../../firebase/firebase.service';
 import { getNestedValue } from './helpers';
 
 interface PendingTicket {
@@ -82,14 +82,14 @@ export class WhatsappEditPhotosFlowService {
         : tempEditPhotos;
 
       const db = this.firebase.db;
-      const ticketSnap = await db.collection('tickets').doc(ticketId).get();
+      const ticketSnap = await db.collection(COLLECTIONS.TICKETS).doc(ticketId).get();
       const existing: string[] =
         ((getNestedValue(
           ticketSnap.data()?.extraFields || {},
           editFieldKey,
         ) as string[]) || []);
 
-      await db.collection('tickets').doc(ticketId).update({
+      await db.collection(COLLECTIONS.TICKETS).doc(ticketId).update({
         [`extraFields.${editFieldKey}`]: [...existing, ...finalPhotos],
         'timestamps.updatedAt': Date.now(),
       });
@@ -145,7 +145,7 @@ export class WhatsappEditPhotosFlowService {
     const editFieldKey = ls.editFieldKey as string;
 
     const db = this.firebase.db;
-    const ticketSnap = await db.collection('tickets').doc(ticketId).get();
+    const ticketSnap = await db.collection(COLLECTIONS.TICKETS).doc(ticketId).get();
     const currentPhotos: string[] = [
       ...((getNestedValue(
         ticketSnap.data()?.extraFields || {},
@@ -159,7 +159,7 @@ export class WhatsappEditPhotosFlowService {
       currentPhotos.push(incomingPhotoUrl);
     }
 
-    await db.collection('tickets').doc(ticketId).update({
+    await db.collection(COLLECTIONS.TICKETS).doc(ticketId).update({
       [`extraFields.${editFieldKey}`]: currentPhotos,
       'timestamps.updatedAt': Date.now(),
     });

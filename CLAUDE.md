@@ -26,23 +26,23 @@ Emulator ports: Firestore `8010`, Auth `9099`, Storage `9199`.
 
 NestJS app with global `api/` prefix, port 3001. No ORM — all persistence goes directly through Firebase Admin SDK. Five feature modules plus a shared Firebase module.
 
-**`firebase`** — Global singleton (`@Global()`). `FirebaseService` exposes `.db` (Firestore), `.auth` (Auth), `.storage` (Storage). Emulator hosts must be set on `process.env` before `initializeApp()`, which this service handles.
+**`firebase`** — Global singleton (`@Global()`). `FirebaseService` exposes `.db` (Firestore), `.auth` (Auth), `.storage` (Storage). Emulator hosts must be set on `process.env` before `initializeApp()`, which this service handles. Also exports `COLLECTIONS` constant — all Firestore collection names go through it. Never hardcode collection strings; import `COLLECTIONS.TICKETS`, `COLLECTIONS.SESSIONS`, `COLLECTIONS.HOSTS`, `COLLECTIONS.BOT_CONFIG`, `COLLECTIONS.GESTORS` instead.
 
 **`auth`** — `FirebaseAuthGuard` reads `Authorization: Bearer <token>`, calls `verifyIdToken()`, and attaches the decoded token to `req.user`. Applied per-controller with `@UseGuards(FirebaseAuthGuard)`.
 
 **`tickets`** — All routes guarded. Key patterns:
 - Status transitions run inside a Firestore transaction and write an entry to the `statusHistory` subcollection. The history entry records `previousStatus`, `newStatus`, `changedBy {uid, role}`, `comments`, and `timestamp`.
-- Valid statuses: `REPORTADO → REVISION → EN_REPARACION → REPARADO → ENTREGADO → FINALIZADO`. Soft-delete sets status to `ARCHIVADO`.
-- Photos stored in Firebase Storage (`repair_photos/<ticketId>/`); public URLs persisted in `photos.evidence[]` / `photos.repair[]`.
+- Valid statuses: `SOLICITUD_RECIBIDA → APROBACION_PIEZAS → EN_MONTAJE → ENLACE_PUBLICADO → PRODUCCION_PREVIA → PRODUCCION_POSTERIOR → FINALIZADO`. Soft-delete sets status to `ARCHIVADO`. Tickets are always created with `SOLICITUD_RECIBIDA`.
+- **Auto-transition**: when an admin or gestor uploads a photo via `POST /api/tickets/:id/photos/:fieldKey` and the ticket is in `SOLICITUD_RECIBIDA`, it auto-transitions to `APROBACION_PIEZAS` and the reporter is notified — the admin-sourced photos are sent to the user as proposed parts for approval.
+- Photos stored in Firebase Storage (`ticket_photos/<ticketId>/<fieldKey>/`); public URLs persisted under the configured `extraFields` paths (e.g. `photos.evidence[]`, `photos.repair[]`).
 - `TicketsController` injects `WhatsappService` to notify the reporter when evidence photos are deleted.
 - `POST /api/tickets/import` accepts an `.xlsx` file. Rows are validated against `botConfig.fields`, matched by `field.label` or `field.key`. Phone numbers are normalized (e.g. `3123456789` → `573123456789`). Returns `{ created[], failed[] }` where each failed entry includes the Excel row number (row + 2) and reason.
-- `FINALIZADO` tickets older than 30 days are hidden from non-admin queries.
 
 **`whatsapp`** — Marked `@Global()`. Two responsibilities:
 1. **Webhook**: `GET /api/whatsapp/webhook` handles Meta verification; `POST /api/whatsapp/webhook` returns 200 immediately and processes in background.
-2. **Status listener**: On `OnModuleInit`, opens a Firestore `onSnapshot` on `tickets`. When a status changes, it notifies the reporter via WhatsApp. On `REPARADO`, also sends repair photos.
+2. **Status listener**: When a status changes, it notifies the reporter via WhatsApp. On `APROBACION_PIEZAS`, also sends the admin-uploaded photos as "proposed parts for approval".
 
-Bot session state is stored per phone in `whatsapp_sessions/{phone}` using `set({...}, { merge: true })` to avoid clobbering concurrent writes. The `state` field drives a large if/else state machine in `processMessage()`.
+Bot session state is stored per phone in `whatsapp_sessions_ACE/{phone}` using `set({...}, { merge: true })` to avoid clobbering concurrent writes. The `state` field drives a large if/else state machine in `processMessage()`.
 
 **WhatsApp state machine states:**
 
@@ -68,9 +68,9 @@ When multiple images arrive concurrently for a photo-type field, a Firestore tra
 
 `POST /api/whatsapp/bot-toggle` disables automatic replies while preserving message history (live-agent takeover). `POST /api/whatsapp/request-field-update` sets the user's state to `WAITING_ADMIN_REQUESTED_UPDATE` and sends a templated prompt — the user must then use the normal edit flow (option 3) to provide the value.
 
-**`hosts`** — CRUD for the `hosts` Firestore collection. Keyed by phone number. Upserted automatically during ticket import.
+**`hosts`** — CRUD for the `hosts_ACE` Firestore collection. Keyed by phone number. Upserted automatically during ticket import.
 
-**`bot-config`** — Runtime bot configuration. Reads from `bot_config/messages` and `bot_config/ticket_fields` in Firestore. Results cached in-memory for 60 seconds.
+**`bot-config`** — Runtime bot configuration. Reads from `bot_config_ACE/messages` and `bot_config_ACE/ticket_fields` in Firestore. Results cached in-memory for 60 seconds.
 
 `TicketField` key properties:
 - `source`: `'bot'` (WhatsApp creation flow) | `'admin'` (admin edits only) | `'auto'` (system-generated, never user-facing)
@@ -83,12 +83,15 @@ The `interpolate(template, vars)` helper replaces `{placeholder}` tokens used ac
 
 ### Firestore Collections
 
-| Collection | Purpose |
-|---|---|
-| `tickets` | Ticket documents; subcollection `statusHistory` per ticket |
-| `whatsapp_sessions` | Per-phone bot state + full message history |
-| `hosts` | Reporter/agent records keyed by phone |
-| `bot_config` | Two documents: `messages` and `ticket_fields` |
+All collection names are centralized in the `COLLECTIONS` constant exported from `firebase.service.ts`. Never hardcode them.
+
+| Constant | Collection name | Purpose |
+|---|---|---|
+| `COLLECTIONS.TICKETS` | `eventos_ACE` | Ticket documents; subcollection `statusHistory` per ticket |
+| `COLLECTIONS.SESSIONS` | `whatsapp_sessions_ACE` | Per-phone bot state + full message history |
+| `COLLECTIONS.HOSTS` | `hosts_ACE` | Reporter/agent records keyed by phone |
+| `COLLECTIONS.BOT_CONFIG` | `bot_config_ACE` | Two documents: `messages` and `ticket_fields` |
+| `COLLECTIONS.GESTORS` | `gestor_ACE` | Gestor user records keyed by uid |
 
 ### Key Firestore Patterns
 

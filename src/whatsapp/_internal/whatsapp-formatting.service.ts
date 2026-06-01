@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { BotConfigService, TicketField } from '../../bot-config/bot-config.service';
-import { getNestedValue, formatScheduledDate } from './flows/helpers';
+import { getNestedValue } from './flows/helpers';
 
 interface PendingTicket {
   id: string;
@@ -9,7 +9,6 @@ interface PendingTicket {
   extraFields?: Record<string, string | string[]>;
   createdAt?: number;
   updatedAt?: number;
-  scheduledDate?: string;
 }
 
 @Injectable()
@@ -40,11 +39,6 @@ export class WhatsappFormattingService {
           ? new Date(t.createdAt).toLocaleDateString('es-CO')
           : 'Sin fecha';
 
-        const scheduledStr =
-          (t.status === 'PROGRAMADO' || t.status === 'REPROGRAMADO')
-            ? formatScheduledDate(t.scheduledDate)
-            : null;
-
         if (template) {
           const extraVars = this.flattenExtraFieldsForInterpolation(
             (t.extraFields as Record<string, unknown>) || {},
@@ -54,7 +48,6 @@ export class WhatsappFormattingService {
             ticketNumber: t.ticketNumber,
             estado: t.status,
             fecha: dateStr,
-            fechaProgramada: scheduledStr ?? '',
             ...extraVars,
           };
           const rendered = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
@@ -66,9 +59,6 @@ export class WhatsappFormattingService {
           `   Estado: ${t.status}`,
           `   Fecha: ${dateStr}`,
         ];
-        if (scheduledStr) {
-          lines.push(`   📅 Programado para: ${scheduledStr}`);
-        }
         for (const field of textFields) {
           const value = getNestedValue((t.extraFields as Record<string, unknown>) || {}, field.key);
           if (value && typeof value === 'string') {

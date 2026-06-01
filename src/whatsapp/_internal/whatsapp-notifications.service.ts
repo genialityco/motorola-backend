@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { BotConfigService, interpolate } from '../../bot-config/bot-config.service';
 import { WhatsappApiClient } from './whatsapp-api.client';
 import { flattenExtraFieldsForInterpolation, getNestedValue, normalizePhoneForWhatsApp } from './utils';
@@ -25,8 +25,8 @@ export class WhatsappNotificationsService {
     const phone = rawPhone ? normalizePhoneForWhatsApp(rawPhone) : '';
     if (!phone) return;
 
-    if (newStatus === 'REPARADO') {
-      await this.notifyRepaired(phone, prevStatus, newStatus, ticketData);
+    if (newStatus === 'APROBACION_PIEZAS') {
+      await this.notifyApprovalPhotos(phone, prevStatus, newStatus, ticketData);
     } else {
       await this.notifyGenericStatusChange(phone, prevStatus, newStatus, ticketData);
     }
@@ -39,7 +39,7 @@ export class WhatsappNotificationsService {
     customMessage?: string,
   ): Promise<void> {
     const db = this.firebase.db;
-    const ticketSnap = await db.collection('tickets').doc(ticketId).get();
+    const ticketSnap = await db.collection(COLLECTIONS.TICKETS).doc(ticketId).get();
     if (!ticketSnap.exists) throw new Error('Ticket no encontrado');
     const ticket = ticketSnap.data()!;
     const phone: string = ticket.reporter?.phone;
@@ -58,7 +58,7 @@ export class WhatsappNotificationsService {
     });
     if (customMessage?.trim()) msg += `\n\n_${customMessage.trim()}_`;
 
-    const sessionRef = db.collection('whatsapp_sessions').doc(phone);
+    const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(phone);
     await sessionRef.set(
       { state: 'WAITING_ADMIN_REQUESTED_UPDATE', requestedFieldKey: fieldKey, requestedFieldLabel: fieldLabel, requestedTicketId: ticketId },
       { merge: true },
@@ -67,16 +67,16 @@ export class WhatsappNotificationsService {
     await this.api.saveMessage(phone, 'bot', msg);
   }
 
-  private async notifyRepaired(
+  private async notifyApprovalPhotos(
     phone: string, prevStatus: string, newStatus: string, ticketData: Record<string, unknown>,
   ): Promise<void> {
     const allFields = await this.botConfig.getFields().catch(() => []);
     const adminPhotoFields = allFields.filter(f => f.type === 'photo' && f.source === 'admin');
     const extraFields = (ticketData.extraFields as Record<string, string | string[]>) || {};
-    const repairPhotos: string[] = [];
+    const approvalPhotos: string[] = [];
     for (const field of adminPhotoFields) {
       const urls = getNestedValue(extraFields, field.key);
-      if (Array.isArray(urls)) repairPhotos.push(...urls);
+      if (Array.isArray(urls)) approvalPhotos.push(...urls);
     }
 
     const descField = allFields.find(f => f.type !== 'photo' && f.source === 'bot');
@@ -86,9 +86,9 @@ export class WhatsappNotificationsService {
     const extraVars = flattenExtraFieldsForInterpolation(
       (ticketData.extraFields as Record<string, unknown>) || {},
     );
-    const msg = repairPhotos.length > 0
+    const msg = approvalPhotos.length > 0
       ? interpolate(
-          msgs?.reparadoMessage ?? 'Estas son las evidencias de que su ticket *{ticketNumber}* ha sido reparado:',
+          msgs?.aprobacionPiezasMessage ?? 'Estas son las piezas propuestas para la aprobación de tu solicitud *{ticketNumber}*:',
           { ticketNumber: String(ticketData.ticketNumber), description, ...extraVars },
         )
       : interpolate(
@@ -97,15 +97,15 @@ export class WhatsappNotificationsService {
         );
 
     await this.api.saveMessage(phone, 'bot', msg).catch((err) =>
-      this.logger.error('Error guardando notificación REPARADO:', err),
+      this.logger.error('Error guardando notificación APROBACION_PIEZAS:', err),
     );
     await this.api.sendMessage(phone, msg).catch((err) =>
-      this.logger.error('Error enviando notificación REPARADO:', err),
+      this.logger.error('Error enviando notificación APROBACION_PIEZAS:', err),
     );
 
-    for (const photoUrl of repairPhotos) {
+    for (const photoUrl of approvalPhotos) {
       await this.api.saveMessage(phone, 'bot', '[imagen]', photoUrl).catch(() => null);
-      await this.api.sendImageMessage(phone, photoUrl, 'Evidencia de reparación').catch(() => null);
+      await this.api.sendImageMessage(phone, photoUrl, 'Pieza propuesta para aprobación').catch(() => null);
     }
   }
 

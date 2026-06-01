@@ -20,10 +20,12 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\sebas\\\\Documents\\\\GitHub\\\\motorola-backend\" -Recurse -Depth 2 -Directory)",
       "Bash(findstr notifications *)",
       "Bash(echo \"===EXIT=== $?\")",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(rm \"c:/Users/sebas/Documents/GitHub/motorola-frontend/src/app/admin/dashboard/tickets/[id]/_components/ScheduledDateModal.tsx\")"
     ],
     "additionalDirectories": [
-      "c:\\Users\\sebas\\Documents\\GitHub\\motorola-backend"
+      "c:\\Users\\sebas\\Documents\\GitHub\\motorola-backend",
+      "c:\\Users\\sebas\\Documents\\GitHub\\motorola-frontend\\src\\app\\admin\\dashboard\\tickets\\[id]\\_components"
     ]
   }
 }

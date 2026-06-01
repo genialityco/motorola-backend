@@ -30,9 +30,3 @@ export function setNestedValue(obj: Record<string, unknown>, path: string, value
   current[parts[parts.length - 1]] = value;
 }
 
-export function formatScheduledDate(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-CO');
-}

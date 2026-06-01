@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { BotConfigService, interpolate } from '../../bot-config/bot-config.service';
 import { WhatsappSessionService } from './whatsapp-session.service';
 import { WhatsappMediaService } from './whatsapp-media.service';
@@ -73,7 +73,7 @@ export class WhatsappFlowOrchestratorService {
     const phone = message.from || '';
     const body = message.text?.body?.trim() || '';
     const db = this.firebase.db;
-    const sessionRef = db.collection('whatsapp_sessions').doc(phone);
+    const sessionRef = db.collection(COLLECTIONS.SESSIONS).doc(phone);
     const sessionDoc = await sessionRef.get();
     const session = sessionDoc.data() || {};
     const state: string = session.state || 'IDLE';

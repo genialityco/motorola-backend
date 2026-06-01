@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { TicketField } from '../../bot-config/bot-config.service';
-import { PendingTicket, formatScheduledDate, flattenExtraFieldsForInterpolation, getNestedValue } from './utils';
+import { PendingTicket, flattenExtraFieldsForInterpolation, getNestedValue } from './utils';
 
 @Injectable()
 export class WhatsappRenderHelper {
@@ -32,7 +32,7 @@ export class WhatsappRenderHelper {
 
   async getTicketsByPhone(phone: string): Promise<PendingTicket[]> {
     const snap = await this.firebase.db
-      .collection('tickets')
+      .collection(COLLECTIONS.TICKETS)
       .where('reporter.phone', '==', phone)
       .get();
     return snap.docs
@@ -45,7 +45,6 @@ export class WhatsappRenderHelper {
           extraFields: (data.extraFields as Record<string, string | string[]>) || {},
           createdAt: data.timestamps?.createdAt as number | undefined,
           updatedAt: data.timestamps?.updatedAt as number | undefined,
-          scheduledDate: data.scheduledDate as string | undefined,
         };
       })
       .filter((t) => t.status !== 'ARCHIVADO' && t.status !== 'FINALIZADO');
@@ -57,11 +56,6 @@ export class WhatsappRenderHelper {
     const dateStr = t.createdAt
       ? new Date(t.createdAt).toLocaleDateString('es-CO')
       : 'Sin fecha';
-    const scheduledStr =
-      (t.status === 'PROGRAMADO' || t.status === 'REPROGRAMADO')
-        ? formatScheduledDate(t.scheduledDate)
-        : null;
-
     if (template) {
       const extraVars = flattenExtraFieldsForInterpolation(
         (t.extraFields as Record<string, unknown>) || {},
@@ -71,7 +65,6 @@ export class WhatsappRenderHelper {
         ticketNumber: t.ticketNumber,
         estado: t.status,
         fecha: dateStr,
-        fechaProgramada: scheduledStr ?? '',
         ...extraVars,
       };
       const rendered = template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '');
@@ -83,7 +76,6 @@ export class WhatsappRenderHelper {
       `   Estado: ${t.status}`,
       `   Fecha: ${dateStr}`,
     ];
-    if (scheduledStr) lines.push(`   📅 Programado para: ${scheduledStr}`);
     for (const field of textFields) {
       const value = getNestedValue((t.extraFields as Record<string, unknown>) || {}, field.key);
       if (value && typeof value === 'string') {

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { FirebaseService } from '../../firebase/firebase.service';
+import { COLLECTIONS, FirebaseService } from '../../firebase/firebase.service';
 import { UsersService } from '../../users/users.service';
 import {
   ALL_VALID_STATUSES, BotFieldForImport, FailedTicketRow,
-  ImportedTicketResult, ImportResult, TicketStatus,
+  ImportedTicketResult, ImportResult, INITIAL_STATUS, TicketStatus,
   isValidPhone, normalizePhone, setNestedField,
 } from './utils';
 
@@ -16,7 +16,7 @@ export class TicketsImportService {
 
   async getConfigFields(): Promise<BotFieldForImport[]> {
     const snap = await this.firebase.db
-      .collection('bot_config')
+      .collection(COLLECTIONS.BOT_CONFIG)
       .doc('ticket_fields')
       .get();
     if (!snap.exists) return [];
@@ -65,7 +65,7 @@ export class TicketsImportService {
 
     const rawStatus = String(row['Estado'] ?? '').trim().toUpperCase();
     const status: TicketStatus = (ALL_VALID_STATUSES as string[]).includes(rawStatus)
-      ? (rawStatus as TicketStatus) : 'REPORTADO';
+      ? (rawStatus as TicketStatus) : INITIAL_STATUS;
 
     const extraFields: Record<string, unknown> = {};
     const fieldErrors = this.buildExtraFields(row, configFields, extraFields);
@@ -82,7 +82,7 @@ export class TicketsImportService {
       .catch(() => []);
 
     const db = this.firebase.db;
-    await db.collection('tickets').add({
+    await db.collection(COLLECTIONS.TICKETS).add({
       ticketNumber,
       status,
       reporter: { phone, name: reporterName },
@@ -127,7 +127,7 @@ export class TicketsImportService {
   }
 
   private async upsertHost(phone: string, reporterName: string): Promise<void> {
-    const hostRef = this.firebase.db.collection('hosts').doc(phone);
+    const hostRef = this.firebase.db.collection(COLLECTIONS.HOSTS).doc(phone);
     const hostSnap = await hostRef.get();
     if (!hostSnap.exists) {
       const hostName = reporterName !== 'Usuario WhatsApp' ? reporterName : phone;

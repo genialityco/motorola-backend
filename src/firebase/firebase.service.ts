@@ -11,6 +11,14 @@ import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
 import { getStorage, Storage } from 'firebase-admin/storage';
 
+export const COLLECTIONS = {
+  TICKETS: 'eventos_ACE',
+  SESSIONS: 'whatsapp_sessions_ACE',
+  HOSTS: 'hosts_ACE',
+  BOT_CONFIG: 'bot_config_ACE',
+  GESTORS: 'gestor_ACE',
+} as const;
+
 @Injectable()
 export class FirebaseService {
   private readonly logger = new Logger(FirebaseService.name);

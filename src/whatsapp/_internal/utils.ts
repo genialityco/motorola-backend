@@ -26,7 +26,6 @@ export interface PendingTicket {
   extraFields?: Record<string, string | string[]>;
   createdAt?: number;
   updatedAt?: number;
-  scheduledDate?: string;
 }
 
 export const MENU_FALLBACK =
@@ -58,13 +57,6 @@ export const IDLE_RESET_FIELDS = {
   requestedFieldKey: null, requestedFieldLabel: null, requestedTicketId: null,
   tempEditPhotos: null, pendingPhotoIndex: null,
 };
-
-export function formatScheduledDate(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-CO');
-}
 
 export function normalizeText(text: string): string {
   return text
