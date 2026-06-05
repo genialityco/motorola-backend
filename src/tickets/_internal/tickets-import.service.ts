@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { UsersService } from '../../users/users.service';
+import { EmailService } from '../../email/email.service';
 import {
   ALL_VALID_STATUSES, BotFieldForImport, FailedTicketRow,
   ImportedTicketResult, ImportResult, TicketStatus,
@@ -12,6 +13,7 @@ export class TicketsImportService {
   constructor(
     private readonly firebase: FirebaseService,
     private readonly usersService: UsersService,
+    private readonly email: EmailService,
   ) {}
 
   async getConfigFields(): Promise<BotFieldForImport[]> {
@@ -82,14 +84,19 @@ export class TicketsImportService {
       .catch(() => []);
 
     const db = this.firebase.db;
-    await db.collection('tickets').add({
+    const ticketDoc = {
       ticketNumber,
       status,
       reporter: { phone, name: reporterName },
       timestamps: { createdAt: Date.now(), updatedAt: Date.now() },
       extraFields,
       assignedGestorIds,
-    });
+    };
+    await db.collection('tickets').add(ticketDoc);
+
+    this.email
+      .notifyTicketCreated(ticketDoc, assignedGestorIds)
+      .catch((err) => console.error('Error enviando email de ticket importado:', err));
 
     await this.upsertHost(phone, reporterName);
     created.push({ fila, ticketNumber, telefono: phone });

@@ -15,6 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as XLSX from 'xlsx';
 import { TicketsService } from './tickets.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { EmailService } from '../email/email.service';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -35,6 +36,7 @@ export class TicketsController {
   constructor(
     private readonly ticketsService: TicketsService,
     private readonly whatsappService: WhatsappService,
+    private readonly emailService: EmailService,
     private readonly botConfigService: BotConfigService,
   ) {}
 
@@ -85,6 +87,10 @@ export class TicketsController {
     await this.whatsappService
       .notifyStatusChange(prevStatus, body.newStatus, ticketData)
       .catch((err) => console.error('Error enviando notificación WhatsApp:', err));
+
+    await this.emailService
+      .notifyStatusChanged(ticketData, prevStatus, body.newStatus)
+      .catch((err) => console.error('Error enviando email de cambio de estado:', err));
 
     return { success, message };
   }

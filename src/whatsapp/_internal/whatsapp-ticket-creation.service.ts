@@ -5,6 +5,7 @@ import { UsersService } from '../../users/users.service';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { WhatsappSessionService } from './whatsapp-session.service';
 import { WhatsappFormattingService } from './whatsapp-formatting.service';
+import { EmailService } from '../../email/email.service';
 
 interface FieldValues {
   [key: string]: unknown;
@@ -18,6 +19,7 @@ export class WhatsappTicketCreationService {
     private readonly usersService: UsersService,
     private readonly session: WhatsappSessionService,
     private readonly formatting: WhatsappFormattingService,
+    private readonly email: EmailService,
   ) {}
 
   async createTicket(
@@ -44,6 +46,10 @@ export class WhatsappTicketCreationService {
       ...ticketData,
       assignedGestorIds,
     });
+
+    this.email
+      .notifyTicketCreated({ ...ticketData, assignedGestorIds }, assignedGestorIds)
+      .catch((err) => console.error('Error enviando email de ticket creado:', err));
 
     const hostRef = db.collection('hosts').doc(phone);
     const hostSnap = await hostRef.get();
