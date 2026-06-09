@@ -11,13 +11,13 @@ export class EmailController {
   constructor(private readonly emailService: EmailService) {}
 
   @Get('config')
-  getConfig() {
+  getConfig(): Promise<EmailConfig> {
     return this.emailService.getConfig();
   }
 
   @Patch('config')
-  updateConfig(@Body() body: Partial<EmailConfig>) {
-    return this.emailService.updateConfig(body);
+  saveConfig(@Body() config: EmailConfig): Promise<EmailConfig> {
+    return this.emailService.updateConfig(config);
   }
 
   @Get('recipients')
