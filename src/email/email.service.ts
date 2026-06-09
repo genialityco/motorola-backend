@@ -89,9 +89,11 @@ export class EmailService {
   async getConfig(): Promise<EmailConfig> {
     const now = Date.now();
     if (this.configCache && this.configCache.expiresAt > now) {
+      this.logger.debug('getConfig: usando caché');
       return this.configCache.config;
     }
     const snap = await this.firebase.db.collection('bot_config').doc('email').get();
+    this.logger.debug(`getConfig: doc existe=${snap.exists}`);
     const data = snap.exists ? (snap.data() as Partial<EmailConfig>) : {};
     const config: EmailConfig = {
       notifyAssignedGestores:
@@ -105,6 +107,9 @@ export class EmailService {
         },
       },
     };
+    this.logger.log(
+      `getConfig: ${config.recipients.length} destinatario(s) configurado(s), notifyAssignedGestores=${config.notifyAssignedGestores}`,
+    );
     this.configCache = { config, expiresAt: now + 60_000 };
     return config;
   }
@@ -165,36 +170,66 @@ export class EmailService {
       .filter((r) => r.events?.[event] && r.email)
       .map((r) => r.email);
 
+    this.logger.log(
+      `resolveRecipients [${event}]: ${configured.length} destinatario(s) con ese evento activado`,
+    );
+
     const assigned = config.notifyAssignedGestores
       ? await this.getAssignedGestorEmails(assignedGestorIds)
       : [];
 
-    return [...new Set([...configured, ...assigned])];
+    if (config.notifyAssignedGestores) {
+      this.logger.log(
+        `resolveRecipients [${event}]: gestores asignados=${JSON.stringify(assignedGestorIds)} → emails=${JSON.stringify(assigned)}`,
+      );
+    }
+
+    const result = [...new Set([...configured, ...assigned])];
+    this.logger.log(`resolveRecipients [${event}]: total final=${result.length} → ${JSON.stringify(result)}`);
+    return result;
   }
 
   // ── Sending ──────────────────────────────────────────────────────────────────
 
   private async send(to: string[], subject: string, html: string): Promise<void> {
-    if (!to.length || !this.from) return;
-    await this.ses.send(
-      new SendEmailCommand({
-        Source: this.from,
-        Destination: { ToAddresses: to },
-        Message: {
-          Subject: { Data: subject, Charset: 'UTF-8' },
-          Body: { Html: { Data: html, Charset: 'UTF-8' } },
-        },
-      }),
-    );
+    if (!this.from) {
+      this.logger.warn('send: SES_FROM_EMAIL no está configurado — email omitido');
+      return;
+    }
+    if (!to.length) {
+      this.logger.warn('send: lista de destinatarios vacía — email omitido');
+      return;
+    }
+    this.logger.log(`send: enviando vía SES desde="${this.from}" a=${JSON.stringify(to)} asunto="${subject}"`);
+    try {
+      const result = await this.ses.send(
+        new SendEmailCommand({
+          Source: this.from,
+          Destination: { ToAddresses: to },
+          Message: {
+            Subject: { Data: subject, Charset: 'UTF-8' },
+            Body: { Html: { Data: html, Charset: 'UTF-8' } },
+          },
+        }),
+      );
+      this.logger.log(`send: SES aceptó el mensaje — MessageId=${result.MessageId}`);
+    } catch (err) {
+      this.logger.error(`send: SES rechazó el mensaje — ${(err as Error).message}`, (err as Error).stack);
+      throw err;
+    }
   }
 
   async notifyTicketCreated(
     ticketData: Record<string, unknown>,
     assignedGestorIds: string[],
   ): Promise<void> {
+    this.logger.log(`notifyTicketCreated: ticket=${ticketData.ticketNumber} gestoresAsignados=${JSON.stringify(assignedGestorIds)}`);
     const config = await this.getConfig();
     const recipients = await this.resolveRecipients(config, 'created', assignedGestorIds);
-    if (!recipients.length) return;
+    if (!recipients.length) {
+      this.logger.warn('notifyTicketCreated: sin destinatarios — email omitido');
+      return;
+    }
 
     const reporter = (ticketData.reporter as Record<string, string>) ?? {};
     const vars = this.buildVars(ticketData, {
@@ -217,10 +252,14 @@ export class EmailService {
     prevStatus: string,
     newStatus: string,
   ): Promise<void> {
+    this.logger.log(`notifyStatusChanged: ticket=${ticketData.ticketNumber} ${prevStatus} → ${newStatus}`);
     const config = await this.getConfig();
     const assignedGestorIds = (ticketData.assignedGestorIds as string[]) ?? [];
     const recipients = await this.resolveRecipients(config, 'statusChanged', assignedGestorIds);
-    if (!recipients.length) return;
+    if (!recipients.length) {
+      this.logger.warn('notifyStatusChanged: sin destinatarios — email omitido');
+      return;
+    }
 
     const reporter = (ticketData.reporter as Record<string, string>) ?? {};
     const vars = this.buildVars(ticketData, {
