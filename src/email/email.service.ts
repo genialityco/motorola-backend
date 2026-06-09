@@ -82,6 +82,11 @@ export class EmailService {
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
       },
     });
+    if (this.from) {
+      this.logger.log(`SES inicializado — remitente: ${this.from}, región: ${process.env.AWS_REGION ?? 'us-east-1'}`);
+    } else {
+      this.logger.error('SES_FROM_EMAIL no está definido en .env — los emails no se enviarán');
+    }
   }
 
   // ── Configuration ──────────────────────────────────────────────────────────
