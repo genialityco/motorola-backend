@@ -6,6 +6,8 @@ export interface BotMessages {
   ticketCreated: string;
   ticketDeleted: string;
   statusChanged: string;
+  programadoMessage: string;
+  reprogramadoMessage: string;
   reparadoMessage: string;
   noTickets: string;
   invalidField: string;
@@ -67,6 +69,10 @@ export const DEFAULT_MESSAGES: BotMessages = {
   ticketDeleted: '✅ Ticket *{ticketNumber}* eliminado correctamente.',
   statusChanged:
     'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
+  programadoMessage:
+    '📅 Tu solicitud *{ticketNumber}* fue programada para el *{scheduledDate}*.',
+  reprogramadoMessage:
+    '📅 Tu solicitud *{ticketNumber}* fue reprogramada. Nueva fecha: *{scheduledDate}*.',
   reparadoMessage:
     'Estas son las evidencias de que su ticket *{ticketNumber}* con descripción "{description}" ha sido reparado:',
   noTickets: 'No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?',

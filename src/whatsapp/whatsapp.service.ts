@@ -5,7 +5,7 @@ import { WhatsappFlowOrchestratorService } from './_internal/whatsapp-flow-orche
 import { WhatsappSessionService } from './_internal/whatsapp-session.service';
 import { WhatsappFormattingService } from './_internal/whatsapp-formatting.service';
 import { WhatsappMediaService } from './_internal/whatsapp-media.service';
-import { getNestedValue } from './_internal/flows/helpers';
+import { getNestedValue, formatScheduledDate } from './_internal/flows/helpers';
 
 
 interface WhatsAppWebhookPayload {
@@ -46,6 +46,8 @@ export class WhatsappService {
 
     if (newStatus === 'REPARADO') {
       await this.notifyRepaired(phone, ticketData);
+    } else if (newStatus === 'PROGRAMADO' || newStatus === 'REPROGRAMADO') {
+      await this.notifyScheduled(phone, ticketData, prevStatus, newStatus);
     } else {
       await this.notifyStatusChanged(phone, ticketData, prevStatus, newStatus);
     }
@@ -201,6 +203,40 @@ export class WhatsappService {
       await this.session.saveMessage(phone, 'bot', '[imagen]', photoUrl).catch(() => null);
       await this.session.reply(phone, '[imagen]', undefined, photoUrl).catch(() => null);
     }
+  }
+
+  /**
+   * Notifica al usuario que su ticket fue programado o reprogramado
+   */
+  private async notifyScheduled(
+    phone: string,
+    ticketData: Record<string, unknown>,
+    prevStatus: string,
+    newStatus: string,
+  ): Promise<void> {
+    const msgs = await this.botConfig.getMessages().catch(() => null);
+    const extraVars = this.formatting.flattenExtraFieldsForInterpolation(
+      (ticketData.extraFields as Record<string, unknown>) || {},
+    );
+    const scheduledDateFormatted =
+      formatScheduledDate(ticketData.scheduledDate as string | undefined) ?? '';
+
+    const template = newStatus === 'REPROGRAMADO'
+      ? (msgs?.reprogramadoMessage ??
+          '📅 Tu solicitud *{ticketNumber}* fue reprogramada. Nueva fecha: *{scheduledDate}*.')
+      : (msgs?.programadoMessage ??
+          '📅 Tu solicitud *{ticketNumber}* fue programada para el *{scheduledDate}*.');
+
+    const msg = interpolate(template, {
+      ticketNumber: String(ticketData.ticketNumber),
+      prevStatus,
+      newStatus,
+      scheduledDate: scheduledDateFormatted,
+      ...extraVars,
+    });
+
+    await this.session.saveMessage(phone, 'bot', msg).catch(() => null);
+    await this.session.reply(phone, msg).catch(() => null);
   }
 
   /**

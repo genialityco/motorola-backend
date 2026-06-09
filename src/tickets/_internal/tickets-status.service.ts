@@ -77,6 +77,10 @@ export class TicketsStatusService {
       tx.set(ticketRef.collection('statusHistory').doc(), historyEntry);
     });
 
+    if (scheduledDate && (newStatus === 'PROGRAMADO' || newStatus === 'REPROGRAMADO')) {
+      ticketData.scheduledDate = scheduledDate;
+    }
+
     return { success: true, message: 'Ticket actualizado correctamente.', prevStatus, ticketData };
   }
 
