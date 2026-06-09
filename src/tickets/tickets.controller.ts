@@ -89,7 +89,7 @@ export class TicketsController {
       .catch((err) => console.error('Error enviando notificación WhatsApp:', err));
 
     await this.emailService
-      .notifyStatusChanged(ticketData, prevStatus, body.newStatus)
+      .notifyStatusChanged({ ...ticketData, id: ticketId }, prevStatus, body.newStatus)
       .catch((err) => console.error('Error enviando email de cambio de estado:', err));
 
     return { success, message };

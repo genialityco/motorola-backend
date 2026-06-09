@@ -244,8 +244,12 @@ export class EmailService {
     });
 
     const tpl = config.templates.created;
-    const subject = interpolate(tpl.subject, vars);
-    const html = this.wrapHtml('Nuevo ticket creado', interpolate(tpl.body, vars));
+    const subject = interpolate(tpl.subject, vars).replace(/\{link\}/g, '').trim();
+    const html = this.wrapHtml(
+      'Nuevo ticket creado',
+      interpolate(tpl.body, vars),
+      this.ticketUrl(ticketData),
+    );
 
     await this.send(recipients, subject, html).catch((err) =>
       this.logger.error('Error enviando email de ticket creado', err),
@@ -275,8 +279,12 @@ export class EmailService {
     });
 
     const tpl = config.templates.statusChanged;
-    const subject = interpolate(tpl.subject, vars);
-    const html = this.wrapHtml('Cambio de estado en ticket', interpolate(tpl.body, vars));
+    const subject = interpolate(tpl.subject, vars).replace(/\{link\}/g, '').trim();
+    const html = this.wrapHtml(
+      'Cambio de estado en ticket',
+      interpolate(tpl.body, vars),
+      this.ticketUrl(ticketData),
+    );
 
     await this.send(recipients, subject, html).catch((err) =>
       this.logger.error('Error enviando email de cambio de estado', err),
@@ -311,9 +319,41 @@ export class EmailService {
     }
   }
 
-  /** Wraps the (plain-text, {var}-interpolated) body in the styled email layout. */
-  private wrapHtml(title: string, body: string): string {
-    const bodyHtml = escapeHtml(body).replace(/\n/g, '<br/>');
+  /**
+   * Builds the public URL of a ticket in the admin panel. Requires FRONTEND_URL
+   * in the environment and the ticket's document id (`ticketData.id`). Opening it
+   * asks the user to log in (the /admin layout is an auth gate). Returns null if
+   * the URL can't be built (no base or no id), so the {link} button is omitted.
+   */
+  private ticketUrl(ticketData: Record<string, unknown>): string | null {
+    const base = (process.env.FRONTEND_URL ?? '').replace(/\/$/, '');
+    const id = ticketData.id as string | undefined;
+    if (!base || !id) return null;
+    return `${base}/admin/dashboard/tickets/${id}`;
+  }
+
+  /**
+   * Wraps the (plain-text, {var}-interpolated) body in the styled email layout.
+   * The `{link}` placeholder is rendered as a clickable button that opens the
+   * ticket directly (when `linkUrl` is available); otherwise it's removed.
+   */
+  private wrapHtml(title: string, body: string, linkUrl?: string | null): string {
+    const button = linkUrl
+      ? `<a href="${linkUrl}" style="display:inline-block;background:#1a1a2e;color:#fff;` +
+        `text-decoration:none;padding:10px 20px;border-radius:6px;font-weight:bold;` +
+        `margin:4px 0">Ver ticket</a>`
+      : '';
+
+    // `{` y `}` no se escapan, asi que el marcador {link} sobrevive al escape.
+    const escaped = escapeHtml(body).replace(/\n/g, '<br/>');
+    const hasMarker = /\{link\}/.test(escaped);
+    // Si el cuerpo trae {link}, el boton va en ese lugar; si no, y hay enlace, se
+    // anade automaticamente al final para que el boton siempre aparezca.
+    let bodyHtml = escaped.replace(/\{link\}/g, button);
+    if (!hasMarker && button) {
+      bodyHtml += `<div style="margin-top:20px">${button}</div>`;
+    }
+
     return `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff">
   <div style="background:#1a1a2e;padding:24px 32px">

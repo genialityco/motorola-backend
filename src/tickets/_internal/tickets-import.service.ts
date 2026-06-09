@@ -92,10 +92,10 @@ export class TicketsImportService {
       extraFields,
       assignedGestorIds,
     };
-    await db.collection('tickets').add(ticketDoc);
+    const ticketRef = await db.collection('tickets').add(ticketDoc);
 
     this.email
-      .notifyTicketCreated(ticketDoc, assignedGestorIds)
+      .notifyTicketCreated({ ...ticketDoc, id: ticketRef.id }, assignedGestorIds)
       .catch((err) => console.error('Error enviando email de ticket importado:', err));
 
     await this.upsertHost(phone, reporterName);

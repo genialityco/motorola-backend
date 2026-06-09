@@ -48,7 +48,7 @@ export class WhatsappTicketCreationService {
     });
 
     this.email
-      .notifyTicketCreated({ ...ticketData, assignedGestorIds }, assignedGestorIds)
+      .notifyTicketCreated({ ...ticketData, id: docRef.id, assignedGestorIds }, assignedGestorIds)
       .catch((err) => console.error('Error enviando email de ticket creado:', err));
 
     const hostRef = db.collection('hosts').doc(phone);
