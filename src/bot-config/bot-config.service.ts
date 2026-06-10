@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 
 export interface BotMessages {
@@ -6,6 +6,8 @@ export interface BotMessages {
   ticketCreated: string;
   ticketDeleted: string;
   statusChanged: string;
+  programadoMessage: string;
+  reprogramadoMessage: string;
   reparadoMessage: string;
   noTickets: string;
   invalidField: string;
@@ -23,8 +25,14 @@ export interface BotMessages {
   sessionExpiredGeneric: string;
 }
 
+export interface ComplianceLimits {
+  aTiempoMaxDias: number;
+  atencionPrioritariaMaxDias: number;
+}
+
 export interface BotSettings {
   sessionTimeoutHours: number;
+  compliance?: ComplianceLimits;
 }
 
 export interface TicketField {
@@ -47,6 +55,9 @@ export interface SystemFieldConfig {
   key: string;
   label: string;
   visible: boolean;
+  // Orden unificado compartido con los campos personalizados (controla las
+  // columnas del dashboard de tickets). Ausente en documentos antiguos.
+  order?: number;
 }
 
 export const DEFAULT_MESSAGES: BotMessages = {
@@ -61,6 +72,10 @@ export const DEFAULT_MESSAGES: BotMessages = {
   ticketDeleted: '✅ Ticket *{ticketNumber}* eliminado correctamente.',
   statusChanged:
     'El estado de su solicitud *{ticketNumber}* ha cambiado de "{prevStatus}" a "{newStatus}".',
+  programadoMessage:
+    '📅 Tu solicitud *{ticketNumber}* fue programada para el *{scheduledDate}*.',
+  reprogramadoMessage:
+    '📅 Tu solicitud *{ticketNumber}* fue reprogramada. Nueva fecha: *{scheduledDate}*.',
   reparadoMessage:
     'Estas son las evidencias de que su ticket *{ticketNumber}* con descripción "{description}" ha sido reparado:',
   noTickets: 'No tienes tickets registrados aún. ¿Puedo ayudarte en algo más?',
@@ -152,9 +167,29 @@ export class BotConfigService {
   }
 
   async updateFields(fields: TicketField[], systemFields?: SystemFieldConfig[]): Promise<void> {
-    const normalized = fields.map((f, i) => ({ ...f, order: i }));
-    const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: normalized };
-    if (systemFields) data.systemFields = systemFields;
+    const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: [] };
+
+    if (systemFields && systemFields.length > 0) {
+      // Campos del sistema y personalizados comparten un único espacio de
+      // `order` para poder intercalarlos en la tabla de tickets. Renumeramos
+      // la lista combinada a 0..N-1 conservando la posición relativa de cada uno.
+      const combined = [
+        ...systemFields.map((f) => ({ kind: 'sys' as const, order: f.order ?? 0, f })),
+        ...fields.map((f) => ({ kind: 'cus' as const, order: f.order ?? 0, f })),
+      ].sort((a, b) => a.order - b.order);
+
+      const normSys: SystemFieldConfig[] = [];
+      const normFields: TicketField[] = [];
+      combined.forEach((item, i) => {
+        if (item.kind === 'sys') normSys.push({ ...item.f, order: i });
+        else normFields.push({ ...item.f, order: i });
+      });
+      data.fields = normFields;
+      data.systemFields = normSys;
+    } else {
+      data.fields = fields.map((f, i) => ({ ...f, order: i }));
+    }
+
     await this.firebase.db
       .collection('bot_config')
       .doc('ticket_fields')
@@ -169,6 +204,14 @@ export class BotConfigService {
   }
 
   async updateSettings(settings: Partial<BotSettings>): Promise<BotSettings> {
+    if (settings.compliance) {
+      const { aTiempoMaxDias, atencionPrioritariaMaxDias } = settings.compliance;
+      if (aTiempoMaxDias >= atencionPrioritariaMaxDias) {
+        throw new BadRequestException(
+          'El límite "A tiempo" debe ser menor al límite "Atención prioritaria".',
+        );
+      }
+    }
     await this.firebase.db.collection('bot_config').doc('settings').set(settings, { merge: true });
     return this.getSettings();
   }

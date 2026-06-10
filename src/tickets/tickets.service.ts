@@ -5,150 +5,58 @@ import {
 } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 import { FieldValue, DocumentData } from 'firebase-admin/firestore';
+import { TicketsStatusService } from './_internal/tickets-status.service';
+import { TicketsImportService } from './_internal/tickets-import.service';
+import {
+  BotFieldForImport, ImportResult, TicketStatus, getNestedValue,
+} from './_internal/utils';
+import { recordFieldUpdate } from './_internal/activity-history';
 
-type TicketStatus =
-  | 'REPORTADO'
-  | 'REVISION'
-  | 'EN_REPARACION'
-  | 'REPARADO'
-  | 'ENTREGADO'
-  | 'FINALIZADO'
-  | 'ARCHIVADO';
+type Actor = { uid?: string; role?: string; email?: string };
 
-const VALID_STATUSES: TicketStatus[] = [
-  'REPORTADO',
-  'REVISION',
-  'EN_REPARACION',
-  'REPARADO',
-  'ENTREGADO',
-  'FINALIZADO',
-];
-
-const ALL_VALID_STATUSES: TicketStatus[] = [
-  'REPORTADO',
-  'REVISION',
-  'EN_REPARACION',
-  'REPARADO',
-  'ENTREGADO',
-  'FINALIZADO',
-  'ARCHIVADO',
-];
-
-export interface BotFieldForImport {
-  key: string;
-  label: string;
-  type: string;
-  required: boolean;
-  normalize: boolean;
-  options?: string[];
-}
-
-export interface ImportedTicketResult {
-  fila: number;
-  ticketNumber: string;
-  telefono: string;
-}
-
-export interface FailedTicketRow {
-  fila: number;
-  razon: string;
-}
-
-export interface ImportResult {
-  created: ImportedTicketResult[];
-  failed: FailedTicketRow[];
-}
-
-function normalizePhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length === 10 && digits.startsWith('3')) return `57${digits}`;
-  return digits;
-}
-
-function isValidPhone(normalized: string): boolean {
-  return normalized.length >= 7 && /^\d+$/.test(normalized);
-}
-
-function setNestedField(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown,
-): void {
-  const parts = path.split('.');
-  let current = obj;
-  for (let i = 0; i < parts.length - 1; i++) {
-    const part = parts[i];
-    if (!current[part] || typeof current[part] !== 'object') {
-      current[part] = {};
-    }
-    current = current[part] as Record<string, unknown>;
-  }
-  current[parts[parts.length - 1]] = value;
-}
-
-function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((current, part) => {
-    if (!current || typeof current !== 'object') return undefined;
-    return (current as Record<string, unknown>)[part];
-  }, obj);
-}
+export type {
+  BotFieldForImport, ImportedTicketResult, FailedTicketRow, ImportResult,
+} from './_internal/utils';
 
 @Injectable()
 export class TicketsService {
   private readonly storageBucket: string;
 
-  constructor(private readonly firebase: FirebaseService) {
+  constructor(
+    private readonly firebase: FirebaseService,
+    private readonly statusService: TicketsStatusService,
+    private readonly importService: TicketsImportService,
+  ) {
     this.storageBucket = process.env.FIREBASE_STORAGE_BUCKET ?? '';
   }
 
-  async transitionStatus(
+  transitionStatus(
     ticketId: string,
     newStatus: TicketStatus,
     uid: string,
     role: string,
     comments?: string,
+    scheduledDate?: string,
+    email?: string,
   ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
-    if (!VALID_STATUSES.includes(newStatus)) {
-      throw new BadRequestException(`Estado inválido: ${newStatus}`);
-    }
+    return this.statusService.transitionStatus(ticketId, newStatus, uid, role, comments, scheduledDate, email);
+  }
 
-    const db = this.firebase.db;
-    const ticketRef = db.collection('tickets').doc(ticketId);
-    let prevStatus = '';
-    let ticketData: DocumentData = {};
+  getConfigFields(): Promise<BotFieldForImport[]> {
+    return this.importService.getConfigFields();
+  }
 
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ticketRef);
-      if (!snap.exists) throw new NotFoundException('El ticket no existe.');
-
-      prevStatus = snap.data()?.status ?? '';
-      ticketData = snap.data()!;
-
-      tx.update(ticketRef, {
-        status: newStatus,
-        'timestamps.updatedAt': Date.now(),
-      });
-
-      tx.set(ticketRef.collection('statusHistory').doc(), {
-        previousStatus: prevStatus,
-        newStatus,
-        changedBy: { uid, role },
-        comments: comments || '',
-        timestamp: Date.now(),
-      });
-    });
-
-    return { success: true, message: 'Ticket actualizado correctamente.', prevStatus, ticketData };
+  importTickets(rows: Array<Record<string, string>>, configFields: BotFieldForImport[]): Promise<ImportResult> {
+    return this.importService.importTickets(rows, configFields);
   }
 
   async deletePhotoFromField(
     ticketId: string,
     fieldKey: string,
     photoIndex: number,
+    opts?: { actor?: Actor; fieldLabel?: string },
   ): Promise<{ ticketNumber: string; reporterPhone: string }> {
-    const db = this.firebase.db;
-    const ticketRef = db.collection('tickets').doc(ticketId);
-
+    const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
 
@@ -165,6 +73,15 @@ export class TicketsService {
       'timestamps.updatedAt': Date.now(),
     });
 
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue: photos,
+      newValue: newPhotos,
+      changedBy: opts?.actor ?? { role: 'admin' },
+      comments: `Eliminó la foto ${photoIndex + 1}.`,
+    }).catch(() => null);
+
     return {
       ticketNumber: data.ticketNumber as string,
       reporterPhone: data.reporter?.phone as string,
@@ -175,180 +92,84 @@ export class TicketsService {
     ticketId: string,
     fieldKey: string,
     photoUrl: string,
+    opts?: { actor?: Actor; fieldLabel?: string },
   ): Promise<void> {
-    const db = this.firebase.db;
-    const ticketRef = db.collection('tickets').doc(ticketId);
-
+    const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
-
+    const previous = (getNestedValue(snap.data()?.extraFields || {}, fieldKey) as string[]) || [];
     await ticketRef.update({
       [`extraFields.${fieldKey}`]: FieldValue.arrayUnion(photoUrl),
       'timestamps.updatedAt': Date.now(),
     });
+
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue: previous,
+      newValue: [...previous, photoUrl],
+      changedBy: opts?.actor ?? { role: 'admin' },
+      comments: 'Agregó una foto.',
+    }).catch(() => null);
   }
 
   async updateExtraField(
     ticketId: string,
     fieldKey: string,
     value: string,
+    opts?: { actor?: Actor; fieldLabel?: string },
   ): Promise<void> {
     const ref = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ref.get();
     if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado`);
+    const previousValue = getNestedValue(snap.data()?.extraFields || {}, fieldKey);
     await ref.update({
       [`extraFields.${fieldKey}`]: value,
       'timestamps.updatedAt': Date.now(),
     });
+
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue,
+      newValue: value,
+      changedBy: opts?.actor ?? { role: 'admin' },
+    }).catch(() => null);
   }
 
-  async getConfigFields(): Promise<BotFieldForImport[]> {
-    const snap = await this.firebase.db
-      .collection('bot_config')
-      .doc('ticket_fields')
-      .get();
-    if (!snap.exists) return [];
-    const data = snap.data();
-    return ((data?.fields ?? []) as BotFieldForImport[]).filter(
-      (f) => f.type !== 'photo' && f.type !== 'video',
-    );
+  /** Define los administradores (correos) que reciben copia de los correos de este ticket. */
+  async updateNotifyAdmins(ticketId: string, emails: string[]): Promise<void> {
+    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado.`);
+    const clean = [...new Set(emails.filter((e) => typeof e === 'string' && e.trim()))];
+    await ref.update({
+      notifyAdminEmails: clean,
+      'timestamps.updatedAt': Date.now(),
+    });
   }
 
-  async importTickets(
-    rows: Array<Record<string, string>>,
-    configFields: BotFieldForImport[],
-  ): Promise<ImportResult> {
-    const created: ImportedTicketResult[] = [];
-    const failed: FailedTicketRow[] = [];
-    const db = this.firebase.db;
-
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const fila = i + 2; // row 1 is headers in Excel
-
-      try {
-        // ── Validate phone ─────────────────────────────────────────────
-        const rawPhone = String(row['Teléfono Reportante'] ?? '').trim();
-        if (!rawPhone) {
-          failed.push({ fila, razon: 'Teléfono Reportante es requerido' });
-          continue;
-        }
-        const phone = normalizePhone(rawPhone);
-        if (!isValidPhone(phone)) {
-          failed.push({
-            fila,
-            razon: `Teléfono inválido: "${rawPhone}". Debe contener al menos 7 dígitos.`,
-          });
-          continue;
-        }
-
-        // ── Validate status ────────────────────────────────────────────
-        const rawStatus = String(row['Estado'] ?? '').trim().toUpperCase();
-        const status: TicketStatus = (ALL_VALID_STATUSES as string[]).includes(
-          rawStatus,
-        )
-          ? (rawStatus as TicketStatus)
-          : 'REPORTADO';
-
-        // ── Build extraFields ──────────────────────────────────────────
-        const extraFields: Record<string, unknown> = {};
-        const fieldErrors: string[] = [];
-
-        for (const field of configFields) {
-          const colLabel = field.label || field.key;
-          const rawValue = String(row[colLabel] ?? '').trim();
-
-          if (!rawValue) {
-            if (field.required) {
-              fieldErrors.push(`Campo requerido vacío: "${colLabel}"`);
-            }
-            continue;
-          }
-
-          if (field.type === 'numeric' && isNaN(Number(rawValue))) {
-            fieldErrors.push(`"${colLabel}" debe ser numérico, se recibió: "${rawValue}"`);
-            continue;
-          }
-
-          if (
-            field.type === 'list' &&
-            field.options &&
-            field.options.length > 0 &&
-            !field.options.includes(rawValue)
-          ) {
-            fieldErrors.push(
-              `"${colLabel}" debe ser una de: ${field.options.join(', ')}. Se recibió: "${rawValue}"`,
-            );
-            continue;
-          }
-
-          const finalValue = field.normalize ? rawValue.toUpperCase() : rawValue;
-          setNestedField(extraFields, field.key, finalValue);
-        }
-
-        if (fieldErrors.length > 0) {
-          failed.push({ fila, razon: fieldErrors.join(' | ') });
-          continue;
-        }
-
-        // ── Generate unique ticket number ──────────────────────────────
-        const ticketNumber = `TKT-${Math.floor(Math.random() * 90000) + 10000}`;
-
-        // ── Reporter name ──────────────────────────────────────────────
-        const reporterName =
-          String(row['Reportado Por'] ?? '').trim() || 'Usuario WhatsApp';
-
-        // ── Create ticket ──────────────────────────────────────────────
-        await db.collection('tickets').add({
-          ticketNumber,
-          status,
-          reporter: { phone, name: reporterName },
-          timestamps: { createdAt: Date.now(), updatedAt: Date.now() },
-          extraFields,
-        });
-
-        // ── Upsert host ────────────────────────────────────────────────
-        const hostRef = db.collection('hosts').doc(phone);
-        const hostSnap = await hostRef.get();
-        if (!hostSnap.exists) {
-          const hostName =
-            reporterName !== 'Usuario WhatsApp' ? reporterName : phone;
-          await hostRef.set({
-            nombre: hostName,
-            telefono: phone,
-            creadoEn: Date.now(),
-          });
-        }
-
-        created.push({ fila, ticketNumber, telefono: phone });
-      } catch (err) {
-        failed.push({
-          fila,
-          razon: `Error interno: ${(err as Error).message}`,
-        });
-      }
-    }
-
-    return { created, failed };
+  async addObservation(ticketId: string, uid: string, role: string, text: string): Promise<void> {
+    if (!text?.trim()) throw new BadRequestException('La observación no puede estar vacía.');
+    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado.`);
+    await ref.update({
+      observations: FieldValue.arrayUnion({ uid, role, text: text.trim(), timestamp: Date.now() }),
+      'timestamps.updatedAt': Date.now(),
+    });
   }
 
-  async uploadToStorage(
-    buffer: Buffer,
-    mimeType: string,
-    folder: string,
-  ): Promise<string> {
+  async uploadToStorage(buffer: Buffer, mimeType: string, folder: string): Promise<string> {
     if (!this.storageBucket) {
       throw new Error('FIREBASE_STORAGE_BUCKET no está configurado');
     }
-
     const bucket = this.firebase.storage.bucket(this.storageBucket);
     const ext = (mimeType.split('/')[1] || 'jpeg').toLowerCase();
     const filePath = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const file = bucket.file(filePath);
-
     await file.save(buffer, { metadata: { contentType: mimeType } });
     await file.makePublic();
-
     return file.publicUrl();
   }
 }
