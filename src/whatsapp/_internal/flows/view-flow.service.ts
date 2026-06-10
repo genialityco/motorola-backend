@@ -41,8 +41,16 @@ export class WhatsappViewFlowService {
       allFields,
       (await this.botConfig.getMessages())?.ticketListItemTemplate,
     );
-    await send(`Tus tickets:\n\n${list}`);
-    await sessionRef.set({ pendingTickets: myTickets }, { merge: true });
+
+    const selectTemplate =
+      (await this.botConfig.getMessages())?.ticketSelectPrompt ??
+      'Selecciona el número del ticket que deseas *ver*:';
+
+    await send(`Tus tickets:\n\n${list}\n\n${selectTemplate}`);
+    await sessionRef.set({
+      pendingTickets: myTickets,
+      state: 'WAITING_TICKET_SELECTION_VIEW',
+    }, { merge: true });
   }
 
   async handleSelectTicket(

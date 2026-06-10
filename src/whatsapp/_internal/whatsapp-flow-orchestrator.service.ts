@@ -157,7 +157,15 @@ export class WhatsappFlowOrchestratorService {
 
     // ─── ROUTING SEGÚN STATE ─────────────────────────────────────────────────
     if (state === 'IDLE') {
-      await this.mainFlow.handleIdleMenu(phone, body, sessionRef, send);
+      const action = await this.mainFlow.handleIdleMenu(phone, body, sessionRef, send);
+
+      if (action === 'VIEW') {
+        await this.viewFlow.handleViewSelection(phone, body, sessionRef, send, sendPhoto);
+      } else if (action === 'EDIT') {
+        await this.editFlow.handleEditSelection(phone, body, sessionRef, send);
+      } else if (action === 'DELETE') {
+        await this.deleteFlow.handleDeleteSelection(phone, body, sessionRef, send);
+      }
     } else if (CREATE_FLOW_STATES.includes(state)) {
       if (state === 'WAITING_FIELD') {
         await this.createFlow.handleFieldCollection(
