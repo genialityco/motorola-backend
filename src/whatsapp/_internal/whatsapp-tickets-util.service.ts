@@ -23,15 +23,22 @@ export class WhatsappTicketsUtilService {
     return snap.docs
       .map((d) => {
         const data = d.data();
-        return {
+        // Estos objetos se persisten luego en la sesión (`pendingTickets`), y
+        // Firestore rechaza valores `undefined`. Por eso solo incluimos los
+        // campos opcionales cuando realmente tienen valor.
+        const ticket: PendingTicket = {
           id: d.id,
           ticketNumber: data.ticketNumber as string,
           status: data.status as string,
           extraFields: (data.extraFields as Record<string, string | string[]>) || {},
-          createdAt: data.timestamps?.createdAt as number | undefined,
-          updatedAt: data.timestamps?.updatedAt as number | undefined,
-          scheduledDate: data.scheduledDate as string | undefined,
         };
+        const createdAt = data.timestamps?.createdAt as number | undefined;
+        const updatedAt = data.timestamps?.updatedAt as number | undefined;
+        const scheduledDate = data.scheduledDate as string | undefined;
+        if (createdAt !== undefined) ticket.createdAt = createdAt;
+        if (updatedAt !== undefined) ticket.updatedAt = updatedAt;
+        if (scheduledDate !== undefined) ticket.scheduledDate = scheduledDate;
+        return ticket;
       })
       .filter((t) => {
         if (t.status === 'ARCHIVADO') return false;
