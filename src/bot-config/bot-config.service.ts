@@ -110,6 +110,12 @@ export const DEFAULT_FIELDS: TicketField[] = [
   { key: 'photos.repair', label: 'Fotos de Reparación', question: 'Fotos de Reparación', placeholder: 'Sube aquí las fotos de reparación', order: 6, normalize: false, visible: false },
 ];
 
+// TTL de la caché en memoria. Corto a propósito: evita golpear Firestore en
+// cada mensaje del webhook, pero hace que los cambios guardados desde el
+// administrador se reflejen para el host casi de inmediato (la invalidación
+// explícita solo limpia la instancia que recibe el PATCH).
+const CACHE_TTL_MS = 5_000;
+
 @Injectable()
 export class BotConfigService {
   private messagesCache: BotMessages | null = null;
@@ -134,7 +140,7 @@ export class BotConfigService {
     const snap = await this.firebase.db.collection('bot_config').doc('messages').get();
     const data = snap.exists ? (snap.data() as Partial<BotMessages>) : {};
     this.messagesCache = { ...DEFAULT_MESSAGES, ...data };
-    this.cacheExpiry = Date.now() + 60_000;
+    this.cacheExpiry = Date.now() + CACHE_TTL_MS;
     return this.messagesCache;
   }
 
@@ -153,7 +159,7 @@ export class BotConfigService {
       this.fieldsCache = DEFAULT_FIELDS;
     }
     
-    this.cacheExpiry = Date.now() + 60_000;
+    this.cacheExpiry = Date.now() + CACHE_TTL_MS;
     return this.fieldsCache;
   }
 
