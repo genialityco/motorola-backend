@@ -102,7 +102,6 @@ export class WhatsappFlowOrchestratorService {
     }
 
     const send = (text: string) => this.session.reply(phone, text, onResponse);
-    const sendPhoto = (url: string) => this.session.reply(phone, '[imagen]', onResponse, url);
 
     const msgs = await this.botConfig.getMessages().catch(() => null);
     const backKeyword = normalizeText(msgs?.backToMenuKeyword || 'INICIO');
@@ -160,7 +159,7 @@ export class WhatsappFlowOrchestratorService {
       const action = await this.mainFlow.handleIdleMenu(phone, body, sessionRef, send);
 
       if (action === 'VIEW') {
-        await this.viewFlow.handleViewSelection(phone, body, sessionRef, send, sendPhoto);
+        await this.viewFlow.handleViewSelection(phone, sessionRef, send);
       } else if (action === 'EDIT') {
         await this.editFlow.handleEditSelection(phone, body, sessionRef, send);
       } else if (action === 'DELETE') {
@@ -179,10 +178,6 @@ export class WhatsappFlowOrchestratorService {
       } else if (state === 'WAITING_FIELD_OTHER_RESPONSE') {
         await this.createFlow.handleOtherResponse(phone, sessionRef, body, session, send);
       }
-    } else if (state === 'WAITING_TICKET_SELECTION_VIEW') {
-      await this.viewFlow.handleSelectTicket(body, sessionRef, session, send);
-    } else if (state === 'WAITING_VIEW_OPTION') {
-      await this.viewFlow.handleViewOption(body, sessionRef, session, send, sendPhoto);
     } else if (state === 'WAITING_TICKET_SELECTION_EDIT') {
       await this.editFlow.handleSelectTicket(body, sessionRef, session, send);
     } else if (state === 'WAITING_EDIT_FIELD_SELECTION') {
