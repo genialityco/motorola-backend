@@ -32,6 +32,14 @@ export interface UpdateGestorDto {
   active?: boolean;
 }
 
+export interface RegisterUserDto {
+  email: string;
+  name: string;
+  password: string;
+  role: 'admin' | 'gestor';
+  setupKey: string;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -97,6 +105,52 @@ export class UsersService {
   async deleteUser(uid: string): Promise<void> {
     await this.firebase.auth.deleteUser(uid).catch(() => null);
     await this.firebase.db.collection('gestor').doc(uid).delete();
+  }
+
+  /**
+   * Registra un usuario (admin o gestor) protegido por ADMIN_SETUP_KEY.
+   * Pensado para una página de registro oculta; no requiere sesión previa.
+   */
+  async registerUser(dto: RegisterUserDto): Promise<{ uid: string; email: string; role: 'admin' | 'gestor' }> {
+    const expectedKey = process.env.ADMIN_SETUP_KEY;
+    if (!expectedKey) {
+      throw new BadRequestException('ADMIN_SETUP_KEY no está configurado en el servidor.');
+    }
+    if (dto.setupKey !== expectedKey) {
+      throw new BadRequestException('Clave de configuración incorrecta.');
+    }
+    if (dto.role !== 'admin' && dto.role !== 'gestor') {
+      throw new BadRequestException('Rol inválido. Usa "admin" o "gestor".');
+    }
+    if (!dto.email?.trim() || !dto.password || !dto.name?.trim()) {
+      throw new BadRequestException('Correo, nombre y contraseña son obligatorios.');
+    }
+
+    // Los gestores usan el flujo completo (crea el doc en `gestor` para asignaciones).
+    if (dto.role === 'gestor') {
+      const gestor = await this.createGestor({
+        email: dto.email.trim(),
+        name: dto.name.trim(),
+        password: dto.password,
+      });
+      return { uid: gestor.uid, email: gestor.email, role: 'gestor' };
+    }
+
+    // Admin: usuario en Firebase Auth + claim de rol.
+    let uid: string;
+    try {
+      const record = await this.firebase.auth.createUser({
+        email: dto.email.trim(),
+        password: dto.password,
+        displayName: dto.name.trim(),
+      });
+      uid = record.uid;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(`Error creando usuario en Firebase Auth: ${msg}`);
+    }
+    await this.firebase.auth.setCustomUserClaims(uid, { role: 'admin' });
+    return { uid, email: dto.email.trim(), role: 'admin' };
   }
 
   async promoteToAdmin(uid: string, setupKey: string): Promise<void> {
