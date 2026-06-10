@@ -5,6 +5,7 @@ import { FirebaseService } from '../../../firebase/firebase.service';
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
 import { WhatsappTicketsUtilService } from '../whatsapp-tickets-util.service';
 import { getNestedValue, setNestedValue, normalizeText } from './helpers';
+import { recordFieldUpdate } from '../../../tickets/_internal/activity-history';
 
 interface PendingTicket {
   id: string;
@@ -184,13 +185,26 @@ export class WhatsappEditFlowService {
 
     const db = this.firebase.db;
     if (ticketId) {
+      const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
+      const previousValue = getNestedValue(
+        (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
+        editFieldKey,
+      );
+
       await db.collection('tickets').doc(ticketId).update({
         [`extraFields.${editFieldKey}`]: newValue,
         'timestamps.updatedAt': Date.now(),
       });
 
+      await recordFieldUpdate(db, ticketId, {
+        fieldKey: editFieldKey,
+        fieldLabel: (session.editFieldLabel as string) || editFieldKey,
+        previousValue,
+        newValue,
+        changedBy: { role: 'host' },
+      }).catch(() => null);
+
       const msgs = await this.botConfig.getMessages().catch(() => null);
-      const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
       const extraVarsEdit = this.formatting.flattenExtraFieldsForInterpolation(
         (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
       );
@@ -226,13 +240,26 @@ export class WhatsappEditFlowService {
 
     const db = this.firebase.db;
     if (ticketId) {
+      const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
+      const previousValue = getNestedValue(
+        (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
+        editFieldKey,
+      );
+
       await db.collection('tickets').doc(ticketId).update({
         [`extraFields.${editFieldKey}`]: otherValue,
         'timestamps.updatedAt': Date.now(),
       });
 
+      await recordFieldUpdate(db, ticketId, {
+        fieldKey: editFieldKey,
+        fieldLabel: (session.editFieldLabel as string) || editFieldKey,
+        previousValue,
+        newValue: otherValue,
+        changedBy: { role: 'host' },
+      }).catch(() => null);
+
       const msgs = await this.botConfig.getMessages().catch(() => null);
-      const ticketDataEdit = session.pendingTicketData as PendingTicket | null;
       const extraVarsEdit = this.formatting.flattenExtraFieldsForInterpolation(
         (ticketDataEdit?.extraFields as Record<string, unknown>) || {},
       );
@@ -271,6 +298,7 @@ export class WhatsappEditFlowService {
       {
         state: 'WAITING_EDIT_FIELD_VALUE',
         editFieldKey: selectedField.key,
+        editFieldLabel: selectedField.label,
         editFieldType: selectedField.type,
         editFieldOptions: selectedField.options || [],
         editFieldNormalize: selectedField.normalize,
@@ -299,7 +327,10 @@ export class WhatsappEditFlowService {
       `${photoList}¿Qué deseas hacer?\n1. Reemplazar una foto${!hasPhotos ? ' (no disponible)' : ''}\n2. Agregar nuevas fotos\n0. Cancelar`,
     );
 
-    await sessionRef.set({ state: 'WAITING_EDIT_PHOTO_ACTION', editFieldKey: selectedField.key }, { merge: true });
+    await sessionRef.set(
+      { state: 'WAITING_EDIT_PHOTO_ACTION', editFieldKey: selectedField.key, editFieldLabel: selectedField.label },
+      { merge: true },
+    );
   }
 
   private async resetSession(sessionRef: DocumentReference<DocumentData>): Promise<void> {
@@ -311,6 +342,7 @@ export class WhatsappEditFlowService {
         pendingTicketData: null,
         editableFields: null,
         editFieldKey: null,
+        editFieldLabel: null,
         editFieldType: null,
         editFieldOptions: null,
         editFieldAllowOther: null,

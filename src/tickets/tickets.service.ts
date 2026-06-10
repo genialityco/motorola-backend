@@ -10,6 +10,9 @@ import { TicketsImportService } from './_internal/tickets-import.service';
 import {
   BotFieldForImport, ImportResult, TicketStatus, getNestedValue,
 } from './_internal/utils';
+import { recordFieldUpdate } from './_internal/activity-history';
+
+type Actor = { uid?: string; role?: string; email?: string };
 
 export type {
   BotFieldForImport, ImportedTicketResult, FailedTicketRow, ImportResult,
@@ -34,8 +37,9 @@ export class TicketsService {
     role: string,
     comments?: string,
     scheduledDate?: string,
+    email?: string,
   ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
-    return this.statusService.transitionStatus(ticketId, newStatus, uid, role, comments, scheduledDate);
+    return this.statusService.transitionStatus(ticketId, newStatus, uid, role, comments, scheduledDate, email);
   }
 
   getConfigFields(): Promise<BotFieldForImport[]> {
@@ -50,6 +54,7 @@ export class TicketsService {
     ticketId: string,
     fieldKey: string,
     photoIndex: number,
+    opts?: { actor?: Actor; fieldLabel?: string },
   ): Promise<{ ticketNumber: string; reporterPhone: string }> {
     const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ticketRef.get();
@@ -68,28 +73,78 @@ export class TicketsService {
       'timestamps.updatedAt': Date.now(),
     });
 
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue: photos,
+      newValue: newPhotos,
+      changedBy: opts?.actor ?? { role: 'admin' },
+      comments: `Eliminó la foto ${photoIndex + 1}.`,
+    }).catch(() => null);
+
     return {
       ticketNumber: data.ticketNumber as string,
       reporterPhone: data.reporter?.phone as string,
     };
   }
 
-  async addPhotoToField(ticketId: string, fieldKey: string, photoUrl: string): Promise<void> {
+  async addPhotoToField(
+    ticketId: string,
+    fieldKey: string,
+    photoUrl: string,
+    opts?: { actor?: Actor; fieldLabel?: string },
+  ): Promise<void> {
     const ticketRef = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ticketRef.get();
     if (!snap.exists) throw new NotFoundException('El ticket no existe.');
+    const previous = (getNestedValue(snap.data()?.extraFields || {}, fieldKey) as string[]) || [];
     await ticketRef.update({
       [`extraFields.${fieldKey}`]: FieldValue.arrayUnion(photoUrl),
       'timestamps.updatedAt': Date.now(),
     });
+
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue: previous,
+      newValue: [...previous, photoUrl],
+      changedBy: opts?.actor ?? { role: 'admin' },
+      comments: 'Agregó una foto.',
+    }).catch(() => null);
   }
 
-  async updateExtraField(ticketId: string, fieldKey: string, value: string): Promise<void> {
+  async updateExtraField(
+    ticketId: string,
+    fieldKey: string,
+    value: string,
+    opts?: { actor?: Actor; fieldLabel?: string },
+  ): Promise<void> {
     const ref = this.firebase.db.collection('tickets').doc(ticketId);
     const snap = await ref.get();
     if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado`);
+    const previousValue = getNestedValue(snap.data()?.extraFields || {}, fieldKey);
     await ref.update({
       [`extraFields.${fieldKey}`]: value,
+      'timestamps.updatedAt': Date.now(),
+    });
+
+    await recordFieldUpdate(this.firebase.db, ticketId, {
+      fieldKey,
+      fieldLabel: opts?.fieldLabel || fieldKey,
+      previousValue,
+      newValue: value,
+      changedBy: opts?.actor ?? { role: 'admin' },
+    }).catch(() => null);
+  }
+
+  /** Define los administradores (correos) que reciben copia de los correos de este ticket. */
+  async updateNotifyAdmins(ticketId: string, emails: string[]): Promise<void> {
+    const ref = this.firebase.db.collection('tickets').doc(ticketId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new NotFoundException(`Ticket ${ticketId} no encontrado.`);
+    const clean = [...new Set(emails.filter((e) => typeof e === 'string' && e.trim()))];
+    await ref.update({
+      notifyAdminEmails: clean,
       'timestamps.updatedAt': Date.now(),
     });
   }

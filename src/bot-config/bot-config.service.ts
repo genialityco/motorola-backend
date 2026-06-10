@@ -55,6 +55,9 @@ export interface SystemFieldConfig {
   key: string;
   label: string;
   visible: boolean;
+  // Orden unificado compartido con los campos personalizados (controla las
+  // columnas del dashboard de tickets). Ausente en documentos antiguos.
+  order?: number;
 }
 
 export const DEFAULT_MESSAGES: BotMessages = {
@@ -164,9 +167,29 @@ export class BotConfigService {
   }
 
   async updateFields(fields: TicketField[], systemFields?: SystemFieldConfig[]): Promise<void> {
-    const normalized = fields.map((f, i) => ({ ...f, order: i }));
-    const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: normalized };
-    if (systemFields) data.systemFields = systemFields;
+    const data: { fields: TicketField[]; systemFields?: SystemFieldConfig[] } = { fields: [] };
+
+    if (systemFields && systemFields.length > 0) {
+      // Campos del sistema y personalizados comparten un único espacio de
+      // `order` para poder intercalarlos en la tabla de tickets. Renumeramos
+      // la lista combinada a 0..N-1 conservando la posición relativa de cada uno.
+      const combined = [
+        ...systemFields.map((f) => ({ kind: 'sys' as const, order: f.order ?? 0, f })),
+        ...fields.map((f) => ({ kind: 'cus' as const, order: f.order ?? 0, f })),
+      ].sort((a, b) => a.order - b.order);
+
+      const normSys: SystemFieldConfig[] = [];
+      const normFields: TicketField[] = [];
+      combined.forEach((item, i) => {
+        if (item.kind === 'sys') normSys.push({ ...item.f, order: i });
+        else normFields.push({ ...item.f, order: i });
+      });
+      data.fields = normFields;
+      data.systemFields = normSys;
+    } else {
+      data.fields = fields.map((f, i) => ({ ...f, order: i }));
+    }
+
     await this.firebase.db
       .collection('bot_config')
       .doc('ticket_fields')

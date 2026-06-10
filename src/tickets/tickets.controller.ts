@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   Post,
   Patch,
   Delete,
@@ -27,7 +28,7 @@ type MulterFile = {
 };
 
 type AuthenticatedRequest = {
-  user: { uid: string; role?: string };
+  user: { uid: string; role?: string; email?: string };
 };
 
 @Controller('tickets')
@@ -39,6 +40,21 @@ export class TicketsController {
     private readonly emailService: EmailService,
     private readonly botConfigService: BotConfigService,
   ) {}
+
+  @Get('admins')
+  @Roles('admin', 'gestor')
+  listAdmins() {
+    return this.emailService.listAdmins();
+  }
+
+  @Patch(':id/notify-admins')
+  @Roles('admin', 'gestor')
+  updateNotifyAdmins(
+    @Param('id') ticketId: string,
+    @Body() body: { emails: string[] },
+  ) {
+    return this.ticketsService.updateNotifyAdmins(ticketId, body.emails ?? []);
+  }
 
   @Post('import')
   @Roles('admin')
@@ -82,6 +98,7 @@ export class TicketsController {
         req.user.role ?? 'user',
         body.comments,
         body.scheduledDate,
+        req.user.email,
       );
 
     await this.whatsappService
@@ -116,19 +133,22 @@ export class TicketsController {
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
     @Param('index') index: string,
+    @Req() req: AuthenticatedRequest,
   ) {
     const photoIndex = parseInt(index, 10);
     if (isNaN(photoIndex)) throw new BadRequestException('Índice inválido.');
 
+    const fieldLabel = (await this.botConfigService.getFields().catch(() => []))
+      .find((f) => f.key === fieldKey)?.label ?? fieldKey;
+
     const { ticketNumber, reporterPhone } =
-      await this.ticketsService.deletePhotoFromField(ticketId, fieldKey, photoIndex);
+      await this.ticketsService.deletePhotoFromField(ticketId, fieldKey, photoIndex, {
+        actor: { uid: req.user.uid, role: req.user.role ?? 'admin', email: req.user.email },
+        fieldLabel,
+      });
 
     if (reporterPhone) {
-      const [messages, fields] = await Promise.all([
-        this.botConfigService.getMessages(),
-        this.botConfigService.getFields(),
-      ]);
-      const fieldLabel = fields.find((f) => f.key === fieldKey)?.label ?? fieldKey;
+      const messages = await this.botConfigService.getMessages();
       const msg = interpolate(messages.deletePhotoRequest, { ticketNumber: String(ticketNumber), fieldLabel });
       await this.whatsappService.saveMessage(reporterPhone, 'bot', msg).catch(() => null);
       await this.whatsappService.sendMessage(reporterPhone, msg).catch(() => null);
@@ -144,6 +164,7 @@ export class TicketsController {
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
     @UploadedFile() file: MulterFile,
+    @Req() req: AuthenticatedRequest,
   ) {
     if (!file) throw new BadRequestException('No se adjuntó ningún archivo.');
 
@@ -153,18 +174,31 @@ export class TicketsController {
       `ticket_photos/${ticketId}/${fieldKey}`,
     );
 
-    await this.ticketsService.addPhotoToField(ticketId, fieldKey, photoUrl);
+    const fieldLabel = (await this.botConfigService.getFields().catch(() => []))
+      .find((f) => f.key === fieldKey)?.label ?? fieldKey;
+
+    await this.ticketsService.addPhotoToField(ticketId, fieldKey, photoUrl, {
+      actor: { uid: req.user.uid, role: req.user.role ?? 'admin', email: req.user.email },
+      fieldLabel,
+    });
 
     return { success: true, photoUrl };
   }
 
   @Patch(':id/extra/:fieldKey')
   @Roles('admin')
-  updateExtraField(
+  async updateExtraField(
     @Param('id') ticketId: string,
     @Param('fieldKey') fieldKey: string,
     @Body() body: { value: string },
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.ticketsService.updateExtraField(ticketId, fieldKey, body.value ?? '');
+    const fieldLabel = (await this.botConfigService.getFields().catch(() => []))
+      .find((f) => f.key === fieldKey)?.label ?? fieldKey;
+
+    return this.ticketsService.updateExtraField(ticketId, fieldKey, body.value ?? '', {
+      actor: { uid: req.user.uid, role: req.user.role ?? 'admin', email: req.user.email },
+      fieldLabel,
+    });
   }
 }

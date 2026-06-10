@@ -19,9 +19,4 @@ export class EmailController {
   saveConfig(@Body() config: EmailConfig): Promise<EmailConfig> {
     return this.emailService.updateConfig(config);
   }
-
-  @Get('recipients')
-  listRecipientOptions() {
-    return this.emailService.listRecipientOptions();
-  }
 }

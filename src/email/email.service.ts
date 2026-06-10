@@ -4,22 +4,12 @@ import { FirebaseService } from '../firebase/firebase.service';
 
 export type EmailEvent = 'created' | 'statusChanged';
 
-export interface EmailRecipient {
-  id: string; // uid (admin/gestor)
-  email: string;
-  name: string;
-  type: 'admin' | 'gestor';
-  events: Record<EmailEvent, boolean>;
-}
-
 export interface EmailTemplate {
   subject: string;
   body: string;
 }
 
 export interface EmailConfig {
-  notifyAssignedGestores: boolean;
-  recipients: EmailRecipient[];
   templates: Record<EmailEvent, EmailTemplate>;
 }
 
@@ -31,8 +21,6 @@ export interface RecipientOption {
 }
 
 export const DEFAULT_EMAIL_CONFIG: EmailConfig = {
-  notifyAssignedGestores: true,
-  recipients: [],
   templates: {
     created: {
       subject: 'Nuevo ticket creado - {ticketNumber}',
@@ -101,9 +89,6 @@ export class EmailService {
     this.logger.debug(`getConfig: doc existe=${snap.exists}`);
     const data = snap.exists ? (snap.data() as Partial<EmailConfig>) : {};
     const config: EmailConfig = {
-      notifyAssignedGestores:
-        data.notifyAssignedGestores ?? DEFAULT_EMAIL_CONFIG.notifyAssignedGestores,
-      recipients: Array.isArray(data.recipients) ? data.recipients : DEFAULT_EMAIL_CONFIG.recipients,
       templates: {
         created: { ...DEFAULT_EMAIL_CONFIG.templates.created, ...(data.templates?.created ?? {}) },
         statusChanged: {
@@ -112,9 +97,6 @@ export class EmailService {
         },
       },
     };
-    this.logger.log(
-      `getConfig: ${config.recipients.length} destinatario(s) configurado(s), notifyAssignedGestores=${config.notifyAssignedGestores}`,
-    );
     this.configCache = { config, expiresAt: now + 60_000 };
     return config;
   }
@@ -125,14 +107,10 @@ export class EmailService {
     return this.getConfig();
   }
 
-  /** Lists admins (from Firebase Auth) and gestores (from Firestore) selectable as recipients. */
-  async listRecipientOptions(): Promise<RecipientOption[]> {
-    const [authResult, gestorSnap] = await Promise.all([
-      this.firebase.auth.listUsers(1000),
-      this.firebase.db.collection('gestor').get(),
-    ]);
-
-    const admins: RecipientOption[] = authResult.users
+  /** Lists admins (from Firebase Auth) selectable as per-ticket email recipients (CC). */
+  async listAdmins(): Promise<RecipientOption[]> {
+    const authResult = await this.firebase.auth.listUsers(1000);
+    return authResult.users
       .filter((u) => u.customClaims?.['role'] === 'admin' && u.email)
       .map((u) => ({
         id: u.uid,
@@ -140,18 +118,6 @@ export class EmailService {
         name: u.displayName || u.email!,
         type: 'admin' as const,
       }));
-
-    const gestores: RecipientOption[] = gestorSnap.docs
-      .map((d) => d.data() as { uid?: string; email?: string; name?: string })
-      .filter((g) => g.email)
-      .map((g) => ({
-        id: g.uid ?? g.email!,
-        email: g.email!,
-        name: g.name || g.email!,
-        type: 'gestor' as const,
-      }));
-
-    return [...admins, ...gestores];
   }
 
   // ── Recipient resolution ─────────────────────────────────────────────────────
@@ -166,31 +132,20 @@ export class EmailService {
       .map((d) => d.data()!.email as string);
   }
 
+  /**
+   * Destinatarios de un correo de ticket: los gestores asignados (por las reglas
+   * del ticket) más los administradores que el gestor marcó como copia en el
+   * propio ticket (`notifyAdminEmails`).
+   */
   private async resolveRecipients(
-    config: EmailConfig,
-    event: EmailEvent,
     assignedGestorIds: string[],
+    adminEmails: string[],
   ): Promise<string[]> {
-    const configured = config.recipients
-      .filter((r) => r.events?.[event] && r.email)
-      .map((r) => r.email);
-
+    const assigned = await this.getAssignedGestorEmails(assignedGestorIds);
+    const result = [...new Set([...assigned, ...adminEmails.filter(Boolean)])];
     this.logger.log(
-      `resolveRecipients [${event}]: ${configured.length} destinatario(s) con ese evento activado`,
+      `resolveRecipients: gestores=${JSON.stringify(assigned)} adminsCopia=${JSON.stringify(adminEmails)} → total=${result.length}`,
     );
-
-    const assigned = config.notifyAssignedGestores
-      ? await this.getAssignedGestorEmails(assignedGestorIds)
-      : [];
-
-    if (config.notifyAssignedGestores) {
-      this.logger.log(
-        `resolveRecipients [${event}]: gestores asignados=${JSON.stringify(assignedGestorIds)} → emails=${JSON.stringify(assigned)}`,
-      );
-    }
-
-    const result = [...new Set([...configured, ...assigned])];
-    this.logger.log(`resolveRecipients [${event}]: total final=${result.length} → ${JSON.stringify(result)}`);
     return result;
   }
 
@@ -230,7 +185,8 @@ export class EmailService {
   ): Promise<void> {
     this.logger.log(`notifyTicketCreated: ticket=${ticketData.ticketNumber} gestoresAsignados=${JSON.stringify(assignedGestorIds)}`);
     const config = await this.getConfig();
-    const recipients = await this.resolveRecipients(config, 'created', assignedGestorIds);
+    const adminEmails = (ticketData.notifyAdminEmails as string[]) ?? [];
+    const recipients = await this.resolveRecipients(assignedGestorIds, adminEmails);
     if (!recipients.length) {
       this.logger.warn('notifyTicketCreated: sin destinatarios — email omitido');
       return;
@@ -264,7 +220,8 @@ export class EmailService {
     this.logger.log(`notifyStatusChanged: ticket=${ticketData.ticketNumber} ${prevStatus} → ${newStatus}`);
     const config = await this.getConfig();
     const assignedGestorIds = (ticketData.assignedGestorIds as string[]) ?? [];
-    const recipients = await this.resolveRecipients(config, 'statusChanged', assignedGestorIds);
+    const adminEmails = (ticketData.notifyAdminEmails as string[]) ?? [];
+    const recipients = await this.resolveRecipients(assignedGestorIds, adminEmails);
     if (!recipients.length) {
       this.logger.warn('notifyStatusChanged: sin destinatarios — email omitido');
       return;

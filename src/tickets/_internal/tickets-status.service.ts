@@ -23,6 +23,7 @@ export class TicketsStatusService {
     role: string,
     comments?: string,
     scheduledDate?: string,
+    email?: string,
   ): Promise<{ success: boolean; message: string; prevStatus: string; ticketData: DocumentData }> {
     if (!VALID_STATUSES.includes(newStatus)) {
       throw new BadRequestException(`Estado inválido: ${newStatus}`);
@@ -64,10 +65,12 @@ export class TicketsStatusService {
       }
       tx.update(ticketRef, updateData);
 
+      const changedBy: Record<string, string> = { uid, role };
+      if (email) changedBy.email = email;
       const historyEntry: Record<string, unknown> = {
         previousStatus: prevStatus,
         newStatus,
-        changedBy: { uid, role },
+        changedBy,
         comments: comments || '',
         timestamp: Date.now(),
       };

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
 import { FirebaseService } from '../../../firebase/firebase.service';
 import { getNestedValue } from './helpers';
+import { recordFieldUpdate } from '../../../tickets/_internal/activity-history';
 
 interface PendingTicket {
   id: string;
@@ -94,6 +95,15 @@ export class WhatsappEditPhotosFlowService {
         'timestamps.updatedAt': Date.now(),
       });
 
+      await recordFieldUpdate(db, ticketId, {
+        fieldKey: editFieldKey,
+        fieldLabel: (ls.editFieldLabel as string) || editFieldKey,
+        previousValue: existing,
+        newValue: [...existing, ...finalPhotos],
+        changedBy: { role: 'host' },
+        comments: `Agregó ${finalPhotos.length} foto(s).`,
+      }).catch(() => null);
+
       await send(`✅ ${finalPhotos.length} foto(s) agregada(s) correctamente.`);
       await this.resetSession(sessionRef);
     }
@@ -146,14 +156,12 @@ export class WhatsappEditPhotosFlowService {
 
     const db = this.firebase.db;
     const ticketSnap = await db.collection('tickets').doc(ticketId).get();
-    const currentPhotos: string[] = [
-      ...((getNestedValue(
-        ticketSnap.data()?.extraFields || {},
-        editFieldKey,
-      ) as string[]) || []),
-    ];
+    const previousPhotos: string[] =
+      ((getNestedValue(ticketSnap.data()?.extraFields || {}, editFieldKey) as string[]) || []);
+    const currentPhotos: string[] = [...previousPhotos];
 
-    if (pendingPhotoIndex >= 0 && pendingPhotoIndex < currentPhotos.length) {
+    const isReplace = pendingPhotoIndex >= 0 && pendingPhotoIndex < currentPhotos.length;
+    if (isReplace) {
       currentPhotos[pendingPhotoIndex] = incomingPhotoUrl;
     } else {
       currentPhotos.push(incomingPhotoUrl);
@@ -163,6 +171,15 @@ export class WhatsappEditPhotosFlowService {
       [`extraFields.${editFieldKey}`]: currentPhotos,
       'timestamps.updatedAt': Date.now(),
     });
+
+    await recordFieldUpdate(db, ticketId, {
+      fieldKey: editFieldKey,
+      fieldLabel: (ls.editFieldLabel as string) || editFieldKey,
+      previousValue: previousPhotos,
+      newValue: currentPhotos,
+      changedBy: { role: 'host' },
+      comments: isReplace ? `Reemplazó la foto ${pendingPhotoIndex + 1}.` : 'Agregó una foto.',
+    }).catch(() => null);
 
     await send('✅ Foto actualizada correctamente.');
     await this.resetSession(sessionRef);
@@ -176,6 +193,8 @@ export class WhatsappEditPhotosFlowService {
         pendingTickets: null,
         pendingTicketData: null,
         editableFields: null,
+        editFieldKey: null,
+        editFieldLabel: null,
         tempEditPhotos: null,
       },
       { merge: true },
