@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentReference, DocumentData } from 'firebase-admin/firestore';
 import { BotConfigService } from '../../../bot-config/bot-config.service';
-import { WhatsappTicketsUtilService } from '../whatsapp-tickets-util.service';
 import { WhatsappFormattingService } from '../whatsapp-formatting.service';
-import { normalizeText } from './helpers';
 
 const MENU_FALLBACK =
   `Hola, a continuación te mostraré las diferentes funcionalidades que poseo:\n` +
@@ -16,7 +14,6 @@ const MENU_FALLBACK =
 export class WhatsappMainFlowService {
   constructor(
     private readonly botConfig: BotConfigService,
-    private readonly ticketsUtil: WhatsappTicketsUtilService,
     private readonly formatting: WhatsappFormattingService,
   ) {}
 
@@ -37,29 +34,6 @@ export class WhatsappMainFlowService {
       await send(msgs?.menu ?? MENU_FALLBACK);
       return 'MENU';
     }
-  }
-
-  async handleFinalizeSelection(
-    body: string,
-    sessionRef: DocumentReference<DocumentData>,
-    session: Record<string, unknown>,
-    send: (msg: string) => Promise<void>,
-  ): Promise<void> {
-    const tickets: any[] = (session.pendingTickets as any[]) || [];
-    const idx = parseInt(body) - 1;
-
-    if (isNaN(idx) || idx < 0 || idx >= tickets.length) {
-      await send(`Por favor selecciona un número entre 1 y ${tickets.length}.`);
-      return;
-    }
-
-    const ticket = tickets[idx];
-    const db = (await import('../../../firebase/firebase.service')).FirebaseService;
-
-    // En realidad, necesitamos acceso a Firebase a través de la inyección
-    // Por eso este método debería ser llamado desde whatsapp.service
-    await send(`✅ Ticket *${ticket.ticketNumber}* marcado como ENTREGADO.`);
-    await sessionRef.set({ state: 'IDLE', pendingTickets: null }, { merge: true });
   }
 
   async handleAdminRequestedUpdate(

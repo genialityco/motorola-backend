@@ -48,7 +48,7 @@ export class WhatsappRenderHelper {
           scheduledDate: data.scheduledDate as string | undefined,
         };
       })
-      .filter((t) => t.status !== 'ARCHIVADO' && t.status !== 'FINALIZADO');
+          .filter((t) => t.status !== 'ARCHIVADO' && t.status !== 'FINALIZADO');
   }
 
   private formatSingleTicketLine(

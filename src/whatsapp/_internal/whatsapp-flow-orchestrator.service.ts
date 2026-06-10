@@ -201,8 +201,6 @@ export class WhatsappFlowOrchestratorService {
       await this.editPhotosFlow.handleNewPhoto(incomingPhotoUrl, sessionRef, session, send);
     } else if (state === 'WAITING_TICKET_SELECTION_DELETE') {
       await this.deleteFlow.handleSelectTicket(body, sessionRef, session, send);
-    } else if (state === 'WAITING_TICKET_SELECTION_FINALIZE') {
-      await this.mainFlow.handleFinalizeSelection(body, sessionRef, session, send);
     } else if (state === 'WAITING_ADMIN_REQUESTED_UPDATE') {
       await this.mainFlow.handleAdminRequestedUpdate(sessionRef, send);
     } else {

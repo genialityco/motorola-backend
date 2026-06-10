@@ -73,6 +73,15 @@ export class FirebaseService {
     }
 
     this.db = getFirestore(this._app);
+    // Ignora propiedades `undefined` al escribir (Firestore las rechaza por
+    // defecto). Evita errores como "Cannot use 'undefined' as a Firestore value"
+    // cuando se guardan objetos con campos opcionales vacíos (p. ej. scheduledDate).
+    // settings() solo puede llamarse una vez antes del primer uso.
+    try {
+      this.db.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      // Ya inicializado (p. ej. hot reload): se ignora.
+    }
     this.auth = getAuth(this._app);
     this.storage = getStorage(this._app);
   }
